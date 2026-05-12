@@ -1,7 +1,7 @@
 // code.gs
 // Google Apps Script untuk mengambil data dari Google Sheet
 // Sheet ID: 1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI
-// Sheets: IADL, akses
+// Sheets: IADL, akses, MasterKPI, MasterTemplate, OTP
 
 function doGet(e) {
   return handleRequest(e);
@@ -47,8 +47,39 @@ function handleRequest(e) {
         result = loginUser(username, password);
         break;
       
+      // Master KPI Actions
+      case 'getAllKPI':
+        result = getAllKPIData();
+        break;
+      
+      // Master Template Actions
+      case 'getAllTemplates':
+        result = getAllTemplateData();
+        break;
+      
+      // OTP Actions
+      case 'saveOTP':
+        const otpData = JSON.parse(e.parameter.data || '{}');
+        result = saveOTPData(otpData);
+        break;
+      case 'getAllOTP':
+        result = getAllOTPData();
+        break;
+      case 'getOTPByDept':
+        const dept = e.parameter.department || '';
+        result = getOTPByDepartment(dept);
+        break;
+      case 'updateOTPStatus':
+        const otpId = e.parameter.otpId;
+        const status = e.parameter.status;
+        const reviewerNotes = e.parameter.reviewerNotes || '';
+        const reviewedBy = e.parameter.reviewedBy || '';
+        const reviewedDate = e.parameter.reviewedDate || '';
+        result = updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate);
+        break;
+      
       default:
-        result = { status: 'error', message: 'Unknown action' };
+        result = { status: 'error', message: 'Unknown action: ' + action };
     }
     
     return ContentService
@@ -193,13 +224,11 @@ function getUsers() {
 }
 
 function getAllUsers() {
-  // Same as getUsers but without sensitive data exposure
   const result = getUsers();
   if (result.status === 'success' && result.data) {
-    // Remove passwords from response for security
     const safeData = result.data.map(user => ({
       ...user,
-      Password: '••••••••' // Mask password
+      Password: '••••••••'
     }));
     return { status: 'success', data: safeData, total: result.total };
   }
@@ -218,11 +247,10 @@ function loginUser(username, password) {
   );
   
   if (user) {
-    // Map user data
     const mappedUser = {
       id: user.rowIndex || Date.now(),
       username: user.Username,
-      name: user.Username, // You can add a Name column if needed
+      name: user.Username,
       email: user.Username + '@company.com',
       role: user.Role || 'department',
       department: user.Department || '',
@@ -240,5 +268,316 @@ function loginUser(username, password) {
   return {
     status: 'error',
     message: 'Username atau password salah'
+  };
+}
+
+// ============================================
+// MASTER KPI FUNCTIONS (Sheet: MasterKPI)
+// ============================================
+
+function getAllKPIData() {
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('MasterKPI');
+  
+  if (!sheet) {
+    return { status: 'error', message: 'Sheet MasterKPI tidak ditemukan' };
+  }
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow < 2) {
+    return { status: 'success', data: [], total: 0 };
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const values = dataRange.getValues();
+  
+  const data = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = {};
+    for (let j = 0; j < headers.length; j++) {
+      const header = headers[j];
+      if (header && header.toString().trim() !== '') {
+        row[header] = values[i][j];
+      }
+    }
+    row.rowIndex = i + 2;
+    data.push(row);
+  }
+  
+  return { status: 'success', data: data, total: data.length };
+}
+
+// ============================================
+// MASTER TEMPLATE FUNCTIONS (Sheet: MasterTemplate)
+// ============================================
+
+function getAllTemplateData() {
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('MasterTemplate');
+  
+  if (!sheet) {
+    return { status: 'error', message: 'Sheet MasterTemplate tidak ditemukan' };
+  }
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow < 2) {
+    return { status: 'success', data: [], total: 0 };
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const values = dataRange.getValues();
+  
+  const data = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = {};
+    for (let j = 0; j < headers.length; j++) {
+      const header = headers[j];
+      if (header && header.toString().trim() !== '') {
+        row[header] = values[i][j];
+      }
+    }
+    row.rowIndex = i + 2;
+    data.push(row);
+  }
+  
+  return { status: 'success', data: data, total: data.length };
+}
+
+// ============================================
+// OTP FUNCTIONS (Sheet: OTP)
+// ============================================
+
+function saveOTPData(data) {
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  let sheet = spreadsheet.getSheetByName('OTP');
+  
+  // Buat sheet OTP jika belum ada
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet('OTP');
+    
+    // Set headers
+    const headers = [
+      'OTP_ID', 'Department', 'Year', 'Template_Code', 'Objective',
+      'KPI_Code', 'KPI_Name', 'UOM', 'Polarity', 'Formula',
+      'Program_Code', 'Hazard_Description', 'Program_Control', 'Activity',
+      'Target', 'Timeline', 'Owner', 'Budget', 'Weight',
+      'Status', 'Created_Date', 'Created_By',
+      'Reviewer_Notes', 'Reviewed_By', 'Reviewed_Date'
+    ];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#7FB77E');
+    sheet.getRange(1, 1, 1, headers.length).setFontColor('#FFFFFF');
+  }
+  
+  const lastRow = sheet.getLastRow();
+  
+  // Generate OTP ID
+  const year = data.year || new Date().getFullYear();
+  const dept = (data.department || 'UNKNOWN').substring(0, 3).toUpperCase();
+  const rowNum = (lastRow).toString().padStart(3, '0');
+  const otpId = `OTP-${year}-${dept}-${rowNum}`;
+  
+  const rowData = [
+    otpId,
+    data.department || '',
+    data.year || new Date().getFullYear(),
+    data.templateCode || '',
+    data.objective || '',
+    data.kpiCode || '',
+    data.kpiName || '',
+    data.uom || '',
+    data.polarity || '',
+    data.formula || '',
+    data.programCode || '',
+    data.hazardDesc || '',
+    data.programControl || '',
+    data.activity || '',
+    data.target || '',
+    data.timeline || '',
+    data.owner || '',
+    data.budget || '',
+    data.weight || '',
+    data.status || 'Draft',
+    data.createdAt || new Date().toISOString(),
+    data.createdBy || '',
+    '', // Reviewer_Notes (kosong saat create)
+    '', // Reviewed_By (kosong saat create)
+    ''  // Reviewed_Date (kosong saat create)
+  ];
+  
+  sheet.getRange(lastRow + 1, 1, 1, rowData.length).setValues([rowData]);
+  
+  return { 
+    status: 'success', 
+    message: 'OTP berhasil disimpan',
+    otpId: otpId
+  };
+}
+
+function getAllOTPData() {
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('OTP');
+  
+  if (!sheet) {
+    return { status: 'success', data: [], total: 0 };
+  }
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow < 2) {
+    return { status: 'success', data: [], total: 0 };
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const values = dataRange.getValues();
+  
+  const data = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = {};
+    for (let j = 0; j < headers.length; j++) {
+      const header = headers[j];
+      if (header && header.toString().trim() !== '') {
+        row[header] = values[i][j];
+      }
+    }
+    row.rowIndex = i + 2;
+    data.push(row);
+  }
+  
+  return { status: 'success', data: data, total: data.length };
+}
+
+function getOTPByDepartment(department) {
+  const allData = getAllOTPData();
+  
+  if (allData.status !== 'success') return allData;
+  
+  if (!department) return allData;
+  
+  const filteredData = allData.data.filter(item => 
+    item.Department === department || item.department === department
+  );
+  
+  return { status: 'success', data: filteredData, total: filteredData.length };
+}
+
+function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate) {
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('OTP');
+  
+  if (!sheet) {
+    return { status: 'error', message: 'Sheet OTP tidak ditemukan' };
+  }
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow < 2) {
+    return { status: 'error', message: 'Tidak ada data OTP' };
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  
+  // Cari OTP ID column
+  const otpIdColIndex = headers.findIndex(h => 
+    h === 'OTP_ID' || h === 'otpId' || h === 'otp_id'
+  );
+  
+  if (otpIdColIndex === -1) {
+    return { status: 'error', message: 'Kolom OTP_ID tidak ditemukan' };
+  }
+  
+  // Cari row dengan OTP ID yang sesuai
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const values = dataRange.getValues();
+  
+  let targetRow = -1;
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][otpIdColIndex]) === String(otpId)) {
+      targetRow = i + 2; // +2 karena row 1 adalah header
+      break;
+    }
+  }
+  
+  if (targetRow === -1) {
+    return { status: 'error', message: 'OTP dengan ID ' + otpId + ' tidak ditemukan' };
+  }
+  
+  // Cari atau tambahkan kolom yang diperlukan
+  const statusColIndex = headers.findIndex(h => 
+    h === 'Status' || h === 'status'
+  );
+  
+  let reviewerNotesColIndex = headers.findIndex(h => 
+    h === 'Reviewer_Notes' || h === 'reviewerNotes' || h === 'reviewer_notes'
+  );
+  
+  let reviewedByColIndex = headers.findIndex(h => 
+    h === 'Reviewed_By' || h === 'reviewedBy' || h === 'reviewed_by'
+  );
+  
+  let reviewedDateColIndex = headers.findIndex(h => 
+    h === 'Reviewed_Date' || h === 'reviewedDate' || h === 'reviewed_date'
+  );
+  
+  // Update status jika kolom ditemukan
+  if (statusColIndex !== -1) {
+    sheet.getRange(targetRow, statusColIndex + 1).setValue(status);
+  }
+  
+  // Update reviewer notes
+  if (reviewerNotesColIndex !== -1) {
+    sheet.getRange(targetRow, reviewerNotesColIndex + 1).setValue(reviewerNotes);
+  } else {
+    // Tambahkan kolom baru jika belum ada
+    const newCol = lastCol + 1;
+    sheet.getRange(1, newCol).setValue('Reviewer_Notes');
+    sheet.getRange(1, newCol).setFontWeight('bold');
+    sheet.getRange(1, newCol).setBackground('#7FB77E');
+    sheet.getRange(1, newCol).setFontColor('#FFFFFF');
+    sheet.getRange(targetRow, newCol).setValue(reviewerNotes);
+    reviewerNotesColIndex = newCol - 1;
+  }
+  
+  // Update reviewed by
+  if (reviewedByColIndex !== -1) {
+    sheet.getRange(targetRow, reviewedByColIndex + 1).setValue(reviewedBy);
+  } else {
+    const newCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, newCol).setValue('Reviewed_By');
+    sheet.getRange(1, newCol).setFontWeight('bold');
+    sheet.getRange(1, newCol).setBackground('#7FB77E');
+    sheet.getRange(1, newCol).setFontColor('#FFFFFF');
+    sheet.getRange(targetRow, newCol).setValue(reviewedBy);
+    reviewedByColIndex = newCol - 1;
+  }
+  
+  // Update reviewed date
+  if (reviewedDateColIndex !== -1) {
+    sheet.getRange(targetRow, reviewedDateColIndex + 1).setValue(reviewedDate);
+  } else {
+    const newCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, newCol).setValue('Reviewed_Date');
+    sheet.getRange(1, newCol).setFontWeight('bold');
+    sheet.getRange(1, newCol).setBackground('#7FB77E');
+    sheet.getRange(1, newCol).setFontColor('#FFFFFF');
+    sheet.getRange(targetRow, newCol).setValue(reviewedDate);
+    reviewedDateColIndex = newCol - 1;
+  }
+  
+  return { 
+    status: 'success', 
+    message: 'Status OTP berhasil diupdate menjadi ' + status,
+    otpId: otpId,
+    newStatus: status
   };
 }

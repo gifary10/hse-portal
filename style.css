@@ -81,9 +81,9 @@
     --fs-2xl:  clamp(1.45rem,  1.75vw, 1.68rem);
     --fs-3xl:  clamp(1.72rem,  2.2vw,  2rem);
 
-    /* Layout */
-    --sidebar-width: clamp(12rem, 16vw, 15rem);
-    --sidebar-mini:  clamp(3rem, 4vw, 3.5rem);
+/* Layout */
+--sidebar-width: clamp(14rem, 18vw, 17rem);
+--sidebar-mini:  clamp(3.5rem, 5vw, 4rem);
 
     /* Transitions */
     --transition-fast: all 0.12s ease;
@@ -1225,4 +1225,180 @@ code, pre {
     .app-card, .page-header { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
     .data-table { min-width: auto; }
     body { background: #fff !important; background-image: none !important; }
+}
+
+/* Tambahkan ini di akhir file style.css Anda */
+
+/* ============================================
+   25. SKELETON LOADING ANIMATION
+   ============================================ */
+@keyframes skeletonPulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+.skeleton-row td div {
+    animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-row:nth-child(odd) td div {
+    animation-delay: 0.1s;
+}
+
+.skeleton-row:nth-child(even) td div {
+    animation-delay: 0.3s;
+}
+
+/* Styling tambahan untuk skeleton */
+.table-wrapper .skeleton-row td {
+    padding: var(--space-sm) var(--space-md);
+}
+
+/* ============================================
+   26. GLOBAL LOADING SCREEN ENHANCEMENT
+   ============================================ */
+#globalLoadingScreen {
+    font-family: var(--font-display);
+}
+
+#globalLoadingScreen .spinner-border {
+    border-width: 0.25rem;
+    animation: spinnerBorder 0.75s linear infinite;
+}
+
+@keyframes spinnerBorder {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================
+   27. TABLE UPDATE TRANSITION
+   ============================================ */
+.table-wrapper {
+    transition: opacity 0.2s ease;
+}
+
+.table-wrapper.updating {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* ============================================
+   28. BUTTON LOADING STATE
+   ============================================ */
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn .spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.15rem;
+}
+
+/* ============================================
+   29. IMPROVED FOCUS STATES
+   ============================================ */
+.form-control:focus,
+.form-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(72, 161, 17, 0.15);
+    border-color: var(--primary);
+}
+
+/* ============================================
+   30. SEARCH HIGHLIGHT
+   ============================================ */
+mark {
+    background: rgba(242, 181, 11, 0.2);
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+}
+
+/* ============================================
+   31. IMPROVED TOAST ANIMATIONS
+   ============================================ */
+.toast {
+    animation: toastSlideInRight 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.toast.removing {
+    animation: toastSlideOutRight 0.3s ease forwards;
+}
+
+@keyframes toastSlideInRight {
+    from {
+        transform: translateX(120%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes toastSlideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(120%);
+        opacity: 0;
+    }
+}
+
+/* ============================================
+   32. OTP REVIEW PAGE STYLES
+   ============================================ */
+.info-item {
+    margin-bottom: var(--space-sm);
+}
+
+.info-label {
+    display: block;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+    font-family: var(--font-display);
+}
+
+.info-value {
+    font-size: var(--fs-sm);
+    color: var(--text);
+    word-break: break-word;
+}
+
+.detail-section {
+    margin-bottom: var(--space-lg);
+}
+
+.detail-section:last-child {
+    margin-bottom: 0;
+}
+
+.review-actions-card {
+    position: sticky;
+    top: var(--space-md);
+}
+
+.status-banner {
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
 }
