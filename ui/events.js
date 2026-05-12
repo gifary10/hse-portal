@@ -175,7 +175,9 @@ async function executeAction(action, params, element, formElement) {
         'temuanDaftar': 'temuanDaftar',
         'temuanTindakLanjut': 'temuanTindakLanjut',
         'approvalManagement': 'approvalManagement',
-        'approvalHistory': 'approvalHistory'
+        'approvalHistory': 'approvalHistory',
+        'managementReview': 'managementReview',
+        'managementDecision': 'managementDecision'
     };
     
     const pageKey = pageKeyMap[pageName] || pageName;
