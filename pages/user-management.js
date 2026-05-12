@@ -10,13 +10,15 @@ export class UserManagementPage {
         this.pageSize = 10;
         this.users = [];
         this.isLoading = false;
+        this.isRefreshing = false;
     }
 
     async render() {
-        this.showLoading();
+        if (!this.isRefreshing) {
+            this.showLoading();
+        }
         
         try {
-            // Fetch users from Google Sheets
             this.users = await this.db.getAllUsers();
             this.hideLoading();
             return this.renderHTML();
@@ -39,8 +41,8 @@ export class UserManagementPage {
                     <p class="breadcrumb">Home / <span>User Management</span></p>
                 </div>
                 <div class="d-flex gap-sm">
-                    <button class="btn btn-outline-primary" data-action="userManagement.refresh">
-                        <i class="bi bi-arrow-repeat"></i> Refresh
+                    <button class="btn btn-outline-primary" id="refreshUserBtn" data-action="userManagement.refresh">
+                        <i class="bi bi-arrow-repeat"></i> <span>Refresh</span>
                     </button>
                 </div>
             </div>
@@ -54,56 +56,41 @@ export class UserManagementPage {
                     <span class="badge-status info">Total: ${this.users.length} User</span>
                 </div>
 
-                <div class="table-wrapper">
-                    <table class="data-table striped">
-                        <thead>
-                            <tr>
-                                <th class="text-center" style="width: 50px;">No</th>
-                                <th>Username</th>
-                                <th>Password</th>
-                                <th>Department</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${paginatedUsers.length > 0 ? paginatedUsers.map((user, index) => this.renderTableRow(user, startIndex + index + 1)).join('') : `
-                                <tr>
-                                    <td colspan="5">
-                                        <div class="empty-state">
-                                            <i class="bi bi-people"></i>
-                                            <h3>Tidak ada user</h3>
-                                            <p>Belum ada user terdaftar di Google Sheets</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            `}
-                        </tbody>
-                    </table>
+                <div class="table-wrapper" id="userTableWrapper">
+                    ${this.renderTable(paginatedUsers, startIndex)}
                 </div>
 
-                ${totalPages > 1 ? `
-                    <div class="d-flex justify-content-between align-items-center mt-md pt-md border-top">
-                        <div class="pagination-info">
-                            Menampilkan ${startIndex + 1}-${Math.min(startIndex + this.pageSize, this.users.length)} dari ${this.users.length} user
-                        </div>
-                        <div class="pagination-custom">
-                            <button class="page-btn" 
-                                    data-action="userManagement.goToPage" 
-                                    data-params='{"page": ${this.currentPage - 1}}'
-                                    ${this.currentPage === 1 ? 'disabled' : ''}>
-                                <i class="bi bi-chevron-left"></i>
-                            </button>
-                            ${this.renderPaginationButtons(totalPages)}
-                            <button class="page-btn" 
-                                    data-action="userManagement.goToPage" 
-                                    data-params='{"page": ${this.currentPage + 1}}'
-                                    ${this.currentPage === totalPages ? 'disabled' : ''}>
-                                <i class="bi bi-chevron-right"></i>
-                            </button>
-                        </div>
-                    </div>
-                ` : ''}
+                ${totalPages > 1 ? this.renderPagination(totalPages, startIndex) : ''}
             </div>
+        `;
+    }
+
+    renderTable(users, startIndex) {
+        if (users.length === 0) {
+            return `
+                <div class="empty-state">
+                    <i class="bi bi-people"></i>
+                    <h3>Tidak ada user</h3>
+                    <p>Belum ada user terdaftar di Google Sheets</p>
+                </div>
+            `;
+        }
+        
+        return `
+            <table class="data-table striped">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width: 50px;">No</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Department</th>
+                        <th>Role</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${users.map((user, index) => this.renderTableRow(user, startIndex + index + 1)).join('')}
+                </tbody>
+            </table>
         `;
     }
 
@@ -121,7 +108,7 @@ export class UserManagementPage {
         `;
     }
 
-    renderPaginationButtons(totalPages) {
+    renderPagination(totalPages, startIndex) {
         let buttons = '';
         const maxButtons = 5;
         let startPage = Math.max(1, this.currentPage - Math.floor(maxButtons / 2));
@@ -141,7 +128,28 @@ export class UserManagementPage {
             `;
         }
         
-        return buttons;
+        return `
+            <div class="d-flex justify-content-between align-items-center mt-md pt-md border-top">
+                <div class="pagination-info">
+                    Menampilkan ${startIndex + 1}-${Math.min(startIndex + this.pageSize, this.users.length)} dari ${this.users.length} user
+                </div>
+                <div class="pagination-custom">
+                    <button class="page-btn" 
+                            data-action="userManagement.goToPage" 
+                            data-params='{"page": ${this.currentPage - 1}}'
+                            ${this.currentPage === 1 ? 'disabled' : ''}>
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    ${buttons}
+                    <button class="page-btn" 
+                            data-action="userManagement.goToPage" 
+                            data-params='{"page": ${this.currentPage + 1}}'
+                            ${this.currentPage === totalPages ? 'disabled' : ''}>
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        `;
     }
 
     getRoleBadge(role) {
@@ -156,26 +164,84 @@ export class UserManagementPage {
     }
 
     async refresh(params, element) {
-        this.showLoading();
+        const refreshBtn = document.getElementById('refreshUserBtn');
+        
+        // Set loading state pada tombol
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> <span>Memuat...</span>';
+        }
+        
         this.currentPage = 1;
+        
         try {
-            await this.refreshTable();
-            toast('Data user berhasil direfresh', 'success');
+            this.users = await this.db.getAllUsers();
+            this.isRefreshing = true;
+            await this.updateTableOnly();
+            this.isRefreshing = false;
+            
+            toast('Data user berhasil dimuat ulang', 'success');
         } catch (error) {
-            toast('Gagal refresh data user', 'error');
+            toast('Gagal memuat data user', 'error');
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
+            }
         }
     }
 
     async goToPage(params, element) {
         this.currentPage = params.page;
-        await this.refreshTable();
+        await this.updateTableOnly();
     }
 
-    async refreshTable() {
-        const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
-            const html = await this.render();
-            mainContent.innerHTML = html;
+    async updateTableOnly() {
+        const tableWrapper = document.getElementById('userTableWrapper');
+        const cardHeader = tableWrapper?.closest('.app-card');
+        
+        if (!tableWrapper || !cardHeader) {
+            // Fallback ke full render
+            const mainContent = document.getElementById('mainContent');
+            if (mainContent) {
+                const html = await this.render();
+                mainContent.innerHTML = html;
+            }
+            return;
+        }
+        
+        const totalPages = Math.ceil(this.users.length / this.pageSize) || 1;
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const paginatedUsers = this.users.slice(startIndex, startIndex + this.pageSize);
+        
+        // Update tabel dengan animasi
+        tableWrapper.style.opacity = '0.5';
+        tableWrapper.innerHTML = this.renderTable(paginatedUsers, startIndex);
+        
+        requestAnimationFrame(() => {
+            tableWrapper.style.transition = 'opacity 0.2s ease';
+            tableWrapper.style.opacity = '1';
+        });
+        
+        // Update badge total user
+        const badgeStatus = cardHeader.querySelector('.card-header .badge-status');
+        if (badgeStatus) {
+            badgeStatus.textContent = `Total: ${this.users.length} User`;
+        }
+        
+        // Update pagination
+        const existingPagination = cardHeader.querySelector('.border-top');
+        if (totalPages > 1) {
+            const newPagination = this.renderPagination(totalPages, startIndex);
+            if (existingPagination) {
+                existingPagination.outerHTML = newPagination;
+            } else {
+                cardHeader.insertAdjacentHTML('beforeend', newPagination);
+            }
+        } else {
+            if (existingPagination) {
+                existingPagination.remove();
+            }
         }
     }
 
@@ -186,18 +252,55 @@ export class UserManagementPage {
         return div.innerHTML;
     }
 
+    renderSkeleton() {
+        const skeletonRows = Array(5).fill(0).map(() => `
+            <tr class="skeleton-row">
+                <td class="text-center"><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 30px; margin: 0 auto;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 120px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 80px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 100px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 100px;"></div></td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table striped">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width: 50px;">No</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Department</th>
+                        <th>Role</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${skeletonRows}
+                </tbody>
+            </table>
+        `;
+    }
+
     showLoading() {
         this.isLoading = true;
         const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
+        if (mainContent && !mainContent.querySelector('#userSkeletonLoader')) {
             mainContent.innerHTML = `
-                <div class="app-card">
-                    <div class="empty-state">
-                        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <h3 class="mt-md">Memuat Data User...</h3>
-                        <p>Mengambil data dari Google Sheets</p>
+                <div class="page-header">
+                    <div class="page-header-left">
+                        <h1 class="page-title">User Management</h1>
+                        <p class="breadcrumb">Home / <span>User Management</span></p>
+                    </div>
+                </div>
+                <div class="app-card" id="userSkeletonLoader">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="bi bi-people"></i> 
+                            Daftar User (Google Sheets)
+                        </h3>
+                    </div>
+                    <div class="table-wrapper">
+                        ${this.renderSkeleton()}
                     </div>
                 </div>
             `;

@@ -1,0 +1,632 @@
+// pages/master-template.js
+// Master Template Page - Referensi Objective Template untuk OTP
+// Hanya menampilkan data referensi, tidak ada input/edit
+
+import { toast } from '../ui/components.js';
+import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+
+export class MasterTemplatePage {
+    constructor(state, db, router) {
+        this.state = state;
+        this.db = db;
+        this.router = router;
+        this.currentPage = 1;
+        this.pageSize = 10;
+        this.searchQuery = '';
+        this.filterDept = '';
+        this.filterType = '';
+        this.isLoading = false;
+        this.isRefreshing = false;
+        this.totalData = 0;
+        this.totalPages = 1;
+        this.allData = [];
+    }
+
+    async fetchFromSheets(action, params = {}) {
+        const webAppUrl = getWebAppUrl();
+        
+        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
+            return {
+                status: 'local',
+                data: this.allData,
+                total: this.allData.length
+            };
+        }
+
+        try {
+            const url = new URL(webAppUrl);
+            url.searchParams.append('action', action);
+            
+            for (const [key, value] of Object.entries(params)) {
+                if (value !== undefined && value !== null && value !== '') {
+                    url.searchParams.append(key, typeof value === 'object' ? 
+                        JSON.stringify(value) : value.toString());
+                }
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
+            
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const result = await response.json();
+            
+            if (result.status === 'success' && result.data) {
+                this.allData = this.formatData(result.data);
+            }
+            
+            return result;
+            
+        } catch (error) {
+            console.error('Google Sheets fetch error:', error);
+            return {
+                status: 'local',
+                data: this.allData,
+                total: this.allData.length,
+                message: error.message
+            };
+        }
+    }
+
+    async getAllTemplates() {
+        return await this.fetchFromSheets('getAllTemplates');
+    }
+
+    formatItem(item) {
+        if (!item) return {};
+        
+        const fieldMapping = {
+            templateCode: ['Template_Code', 'Template Code', 'templateCode', 'template_code', 'Objective_Code'],
+            templateName: ['Template_Name', 'Template Name', 'templateName', 'template_name', 'Objective_Name'],
+            department: ['Department', 'department', 'Departemen'],
+            type: ['Type', 'type', 'Tipe', 'Objective_Type'],
+            perspective: ['Perspective', 'perspective', 'Perspektif'],
+            objective: ['Objective', 'objective', 'Tujuan'],
+            relatedKPI: ['Related_KPI', 'Related KPI', 'relatedKPI', 'related_kpi', 'KPI_Code'],
+            suggestedProgram: ['Suggested_Program', 'Suggested Program', 'suggestedProgram', 'Program'],
+            status: ['Status', 'status']
+        };
+        
+        const result = {};
+        for (const [field, possibleKeys] of Object.entries(fieldMapping)) {
+            let value = '';
+            for (const key of possibleKeys) {
+                if (item[key] !== undefined && item[key] !== null && item[key] !== '') {
+                    value = item[key];
+                    break;
+                }
+            }
+            result[field] = value || '';
+        }
+        result._rowIndex = item.rowIndex || null;
+        return result;
+    }
+
+    formatData(data) {
+        if (!Array.isArray(data)) return [];
+        return data.map(item => this.formatItem(item));
+    }
+
+    getUniqueDepartments() {
+        const departments = new Set();
+        this.allData.forEach(item => {
+            if (item.department && item.department !== '-') {
+                departments.add(item.department);
+            }
+        });
+        return Array.from(departments).sort();
+    }
+
+    getUniqueTypes() {
+        const types = new Set();
+        this.allData.forEach(item => {
+            if (item.type && item.type !== '-') {
+                types.add(item.type);
+            }
+        });
+        return Array.from(types).sort();
+    }
+
+    applyFilters() {
+        let filtered = [...this.allData];
+        
+        if (this.searchQuery) {
+            const searchLower = this.searchQuery.toLowerCase();
+            filtered = filtered.filter(item => 
+                (item.templateCode && item.templateCode.toLowerCase().includes(searchLower)) ||
+                (item.templateName && item.templateName.toLowerCase().includes(searchLower)) ||
+                (item.objective && item.objective.toLowerCase().includes(searchLower)) ||
+                (item.department && item.department.toLowerCase().includes(searchLower))
+            );
+        }
+        
+        if (this.filterDept) {
+            filtered = filtered.filter(item => item.department === this.filterDept);
+        }
+        
+        if (this.filterType) {
+            filtered = filtered.filter(item => item.type === this.filterType);
+        }
+        
+        return filtered;
+    }
+
+    async render() {
+        if (!this.isRefreshing) this.showLoading();
+        
+        try {
+            if (this.allData.length === 0) {
+                const result = await this.getAllTemplates();
+                if (result.status === 'error') {
+                    this.hideLoading();
+                    return this.renderError(result.message || 'Gagal memuat data');
+                }
+            }
+            
+            const filteredData = this.applyFilters();
+            this.totalData = filteredData.length;
+            this.totalPages = Math.ceil(this.totalData / this.pageSize);
+            
+            if (this.currentPage > this.totalPages && this.totalPages > 0) {
+                this.currentPage = this.totalPages;
+            }
+            if (this.currentPage < 1) this.currentPage = 1;
+            
+            const startIndex = (this.currentPage - 1) * this.pageSize;
+            const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
+            
+            this.hideLoading();
+            return this.renderHTML(paginatedData);
+            
+        } catch (error) {
+            console.error('Render error:', error);
+            this.hideLoading();
+            return this.renderError(error.message);
+        }
+    }
+
+    renderHTML(data) {
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const uniqueDepts = this.getUniqueDepartments();
+        const uniqueTypes = this.getUniqueTypes();
+        
+        return `
+            <div class="page-header">
+                <div class="page-header-left">
+                    <h1 class="page-title">Objective Template</h1>
+                    <p class="breadcrumb">Home / Master Data / <span>Objective Template</span></p>
+                </div>
+                <div class="d-flex gap-sm">
+                    <span class="badge-status info" style="margin-right: 8px;">
+                        <i class="bi bi-info-circle"></i> Referensi
+                    </span>
+                    <button class="btn btn-outline-primary" id="refreshTemplateBtn" data-action="masterTemplate.refresh">
+                        <i class="bi bi-arrow-repeat"></i> <span>Refresh</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="app-card app-card-info mb-md" style="background: #f0f9ff; border-left: 4px solid var(--info);">
+                <div style="display: flex; align-items: start; gap: 12px;">
+                    <i class="bi bi-info-circle-fill" style="color: var(--info); font-size: 1.2rem; margin-top: 2px;"></i>
+                    <div>
+                        <strong style="color: var(--text);">Data Referensi Objective Template</strong>
+                        <p style="margin: 4px 0 0; color: var(--text-light); font-size: var(--fs-sm);">
+                            Halaman ini menampilkan template objective yang digunakan sebagai referensi saat departemen membuat OTP.
+                            Data dikelola oleh Administrator/HSE melalui Google Sheets.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group-custom">
+                            <label><i class="bi bi-search"></i> Cari Template</label>
+                            <input type="text" id="searchTemplateInput" class="form-control"
+                                   placeholder="Cari kode, nama, objective..." 
+                                   value="${this.escapeHtml(this.searchQuery)}">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group-custom">
+                            <label><i class="bi bi-building"></i> Filter Departemen</label>
+                            <select id="filterDeptTemplateInput" class="form-select">
+                                <option value="">Semua Departemen</option>
+                                ${uniqueDepts.map(dept => `
+                                    <option value="${this.escapeHtml(dept)}" ${this.filterDept === dept ? 'selected' : ''}>
+                                        ${this.escapeHtml(dept)}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group-custom">
+                            <label><i class="bi bi-tag"></i> Filter Tipe</label>
+                            <select id="filterTypeTemplateInput" class="form-select">
+                                <option value="">Semua Tipe</option>
+                                ${uniqueTypes.map(type => `
+                                    <option value="${this.escapeHtml(type)}" ${this.filterType === type ? 'selected' : ''}>
+                                        ${this.escapeHtml(type)}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-group-custom">
+                            <label>Hasil</label>
+                            <div class="mt-2">
+                                <span class="badge-status info">
+                                    <i class="bi bi-database"></i> ${this.totalData} Template
+                                </span>
+                                ${(this.searchQuery || this.filterDept || this.filterType) ? `
+                                    <button class="btn btn-sm btn-link" data-action="masterTemplate.clearFilters" 
+                                            style="margin-left: 4px; padding: 2px 6px;">
+                                        <i class="bi bi-x-circle"></i> Clear
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="bi bi-clipboard"></i> 
+                        Objective & Program Templates
+                    </h3>
+                    <span class="badge-status info">Hal. ${this.currentPage} / ${this.totalPages || 1}</span>
+                </div>
+                <div class="table-wrapper" id="templateTableWrapper">
+                    ${this.renderTable(data, startIndex)}
+                </div>
+                ${this.totalPages > 1 ? this.renderPagination() : ''}
+            </div>
+        `;
+    }
+    
+    renderTable(data, startIndex) {
+        if (data.length === 0) {
+            return `
+                <div class="empty-state">
+                    <i class="bi bi-clipboard" style="font-size: 3rem; color: var(--text-muted);"></i>
+                    <h3>Tidak ada template</h3>
+                    <p>${this.searchQuery || this.filterDept || this.filterType ? 
+                        'Tidak ada template yang sesuai dengan filter' : 
+                        'Data template objective belum tersedia'}</p>
+                    <button class="btn btn-primary mt-md" 
+                            data-action="${(this.searchQuery || this.filterDept || this.filterType) ? 'masterTemplate.clearFilters' : 'masterTemplate.refresh'}">
+                        <i class="bi ${(this.searchQuery || this.filterDept || this.filterType) ? 'bi-eraser' : 'bi-arrow-repeat'}"></i> 
+                        ${(this.searchQuery || this.filterDept || this.filterType) ? 'Hapus Filter' : 'Refresh Data'}
+                    </button>
+                </div>
+            `;
+        }
+        
+        return `
+            <table class="data-table striped">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width: 40px;">No</th>
+                        <th style="min-width: 100px;">Template Code</th>
+                        <th style="min-width: 200px;">Template Name</th>
+                        <th style="min-width: 120px;">Department</th>
+                        <th style="min-width: 100px;">Type</th>
+                        <th style="min-width: 120px;">Perspective</th>
+                        <th style="min-width: 250px;">Objective</th>
+                        <th style="min-width: 100px;">Related KPI</th>
+                        <th style="min-width: 200px;">Suggested Program</th>
+                        <th style="min-width: 70px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map((item, index) => this.renderTableRow(item, startIndex + index + 1)).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    renderTableRow(item, rowNumber) {
+        if (!item) return '';
+        
+        const highlightText = (text) => {
+            if (!this.searchQuery || !text) return this.escapeHtml(text || '-');
+            const regex = new RegExp(`(${this.escapeRegex(this.searchQuery)})`, 'gi');
+            return this.escapeHtml(text).replace(regex, 
+                '<mark style="background: var(--accent-light); padding: 0 2px; border-radius: 3px;">$1</mark>');
+        };
+        
+        return `
+            <tr>
+                <td class="text-center">${rowNumber}</td>
+                <td><code style="background: #f0f7ff; padding: 2px 6px; border-radius: 3px;">${this.escapeHtml(item.templateCode || '-')}</code></td>
+                <td class="col-wrap"><strong>${highlightText(item.templateName)}</strong></td>
+                <td><span class="badge-status default">${this.escapeHtml(item.department || '-')}</span></td>
+                <td>${this.getTypeBadge(item.type)}</td>
+                <td>${this.escapeHtml(item.perspective || '-')}</td>
+                <td class="col-wrap">${highlightText(item.objective)}</td>
+                <td><code>${this.escapeHtml(item.relatedKPI || '-')}</code></td>
+                <td class="col-wrap"><small>${this.escapeHtml(item.suggestedProgram || '-')}</small></td>
+                <td>${this.getStatusBadge(item.status)}</td>
+            </tr>
+        `;
+    }
+
+    renderPagination() {
+        let buttons = '';
+        const maxButtons = 5;
+        let startPage = Math.max(1, this.currentPage - Math.floor(maxButtons / 2));
+        let endPage = Math.min(this.totalPages, startPage + maxButtons - 1);
+        
+        if (endPage - startPage < maxButtons - 1) {
+            startPage = Math.max(1, endPage - maxButtons + 1);
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            buttons += `
+                <button class="page-btn ${i === this.currentPage ? 'active' : ''}" 
+                        data-action="masterTemplate.goToPage" data-params='{"page": ${i}}'>${i}</button>
+            `;
+        }
+        
+        const startItem = (this.currentPage - 1) * this.pageSize + 1;
+        const endItem = Math.min(this.currentPage * this.pageSize, this.totalData);
+        
+        return `
+            <div class="d-flex justify-content-between align-items-center mt-md pt-md border-top">
+                <div class="pagination-info">
+                    Menampilkan ${startItem}-${endItem} dari ${this.totalData} Template
+                </div>
+                <div class="pagination-custom">
+                    <button class="page-btn" data-action="masterTemplate.goToPage" 
+                            data-params='{"page": ${this.currentPage - 1}}'
+                            ${this.currentPage === 1 ? 'disabled' : ''}>
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    ${buttons}
+                    <button class="page-btn" data-action="masterTemplate.goToPage" 
+                            data-params='{"page": ${this.currentPage + 1}}'
+                            ${this.currentPage === this.totalPages ? 'disabled' : ''}>
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    async goToPage(params) { this.currentPage = params.page; await this.updateTableOnly(); }
+
+    async refresh() {
+        const refreshBtn = document.getElementById('refreshTemplateBtn');
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <span>Memuat...</span>';
+        }
+        
+        this.allData = [];
+        this.currentPage = 1;
+        this.searchQuery = '';
+        this.filterDept = '';
+        this.filterType = '';
+        
+        setTimeout(() => {
+            ['searchTemplateInput', 'filterDeptTemplateInput', 'filterTypeTemplateInput'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        }, 100);
+        
+        try {
+            await this.getAllTemplates();
+            this.isRefreshing = true;
+            await this.updateTableOnly();
+            this.isRefreshing = false;
+            toast('Data template berhasil dimuat ulang', 'success');
+        } catch (error) {
+            toast('Gagal memuat data', 'error');
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
+            }
+        }
+    }
+
+    async search() {
+        const el = document.getElementById('searchTemplateInput');
+        if (el) { this.searchQuery = el.value; this.currentPage = 1; await this.updateTableOnly(); }
+    }
+
+    async filterDepartment() {
+        const el = document.getElementById('filterDeptTemplateInput');
+        if (el) { this.filterDept = el.value; this.currentPage = 1; await this.updateTableOnly(); }
+    }
+
+    async filterType() {
+        const el = document.getElementById('filterTypeTemplateInput');
+        if (el) { this.filterType = el.value; this.currentPage = 1; await this.updateTableOnly(); }
+    }
+    
+    async clearFilters() {
+        this.searchQuery = '';
+        this.filterDept = '';
+        this.filterType = '';
+        this.currentPage = 1;
+        
+        setTimeout(() => {
+            ['searchTemplateInput', 'filterDeptTemplateInput', 'filterTypeTemplateInput'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        }, 100);
+        
+        await this.updateTableOnly();
+        toast('Filter dihapus', 'info');
+    }
+
+    async updateTableOnly() {
+        const tableWrapper = document.getElementById('templateTableWrapper');
+        
+        if (!tableWrapper) {
+            const mainContent = document.getElementById('mainContent');
+            if (mainContent) {
+                mainContent.innerHTML = await this.render();
+                this.attachEventListeners();
+            }
+            return;
+        }
+        
+        const filteredData = this.applyFilters();
+        this.totalData = filteredData.length;
+        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
+        
+        tableWrapper.style.opacity = '0.5';
+        tableWrapper.innerHTML = this.renderTable(paginatedData, startIndex);
+        
+        requestAnimationFrame(() => {
+            tableWrapper.style.transition = 'opacity 0.2s ease';
+            tableWrapper.style.opacity = '1';
+        });
+        
+        const cardHeader = tableWrapper.closest('.app-card');
+        if (cardHeader) {
+            const badgeStatus = cardHeader.querySelector('.card-header .badge-status');
+            if (badgeStatus) badgeStatus.textContent = `Hal. ${this.currentPage} / ${this.totalPages || 1}`;
+            
+            const existingPagination = cardHeader.querySelector('.border-top');
+            if (this.totalPages > 1) {
+                const newPagination = this.renderPagination();
+                if (existingPagination) existingPagination.outerHTML = newPagination;
+                else cardHeader.insertAdjacentHTML('beforeend', newPagination);
+            } else {
+                if (existingPagination) existingPagination.remove();
+            }
+        }
+        
+        this.attachEventListeners();
+    }
+
+    attachEventListeners() {
+        ['searchTemplateInput', 'filterDeptTemplateInput', 'filterTypeTemplateInput'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const newEl = el.cloneNode(true);
+            el.parentNode.replaceChild(newEl, el);
+            
+            if (id === 'searchTemplateInput') {
+                let timeout;
+                newEl.addEventListener('input', () => {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => this.search(), 400);
+                });
+            } else if (id === 'filterDeptTemplateInput') {
+                newEl.addEventListener('change', () => this.filterDepartment());
+            } else if (id === 'filterTypeTemplateInput') {
+                newEl.addEventListener('change', () => this.filterType());
+            }
+        });
+    }
+
+    getTypeBadge(value) {
+        const badges = {
+            'Strategic': 'danger', 'Tactical': 'warning', 'Operational': 'info', 'HSE': 'success'
+        };
+        const label = value || 'Other';
+        return `<span class="badge-status ${badges[label] || 'default'}">${label}</span>`;
+    }
+
+    getStatusBadge(value) {
+        const badges = { 'Active': 'success', 'active': 'success', 'Inactive': 'danger', 'inactive': 'danger' };
+        const label = value || 'Active';
+        return `<span class="badge-status ${badges[label] || 'success'}">${label}</span>`;
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    
+    escapeRegex(str) {
+        if (!str) return '';
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    renderSkeleton() {
+        return `
+            <table class="data-table striped"><thead><tr>
+                <th class="text-center" style="width:40px;">No</th><th>Template Code</th><th>Template Name</th>
+                <th>Department</th><th>Type</th><th>Perspective</th><th>Objective</th>
+                <th>Related KPI</th><th>Suggested Program</th><th>Status</th>
+            </tr></thead><tbody>
+                ${Array(5).fill(0).map(() => `
+                    <tr class="skeleton-row">
+                        <td class="text-center"><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:25px;margin:0 auto;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:80px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:180px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:90px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:70px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:100px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:200px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:80px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:140px;"></div></td>
+                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:50px;"></div></td>
+                    </tr>
+                `).join('')}
+            </tbody></table>
+        `;
+    }
+
+    showLoading() {
+        this.isLoading = true;
+        const mainContent = document.getElementById('mainContent');
+        if (mainContent && !mainContent.querySelector('#templateSkeletonLoader')) {
+            mainContent.innerHTML = `
+                <div class="page-header"><div class="page-header-left">
+                    <h1 class="page-title">Objective Template</h1>
+                    <p class="breadcrumb">Home / Master Data / <span>Objective Template</span></p>
+                </div></div>
+                <div class="app-card" id="templateSkeletonLoader">
+                    <div class="card-header"><h3 class="card-title"><i class="bi bi-clipboard"></i> Objective & Program Templates</h3></div>
+                    <div class="table-wrapper">${this.renderSkeleton()}</div>
+                </div>
+            `;
+        }
+    }
+
+    hideLoading() { this.isLoading = false; }
+
+    renderError(message) {
+        return `
+            <div class="page-header"><div class="page-header-left">
+                <h1 class="page-title">Objective Template</h1>
+                <p class="breadcrumb">Home / Master Data / <span>Objective Template</span></p>
+            </div></div>
+            <div class="app-card"><div class="empty-state">
+                <i class="bi bi-exclamation-triangle" style="color:var(--danger);font-size:3rem;"></i>
+                <h2>Gagal Memuat Data</h2>
+                <p>${this.escapeHtml(message || 'Terjadi kesalahan')}</p>
+                <button class="btn btn-primary mt-md" data-action="masterTemplate.refresh">
+                    <i class="bi bi-arrow-repeat"></i> Coba Lagi
+                </button>
+            </div></div>
+        `;
+    }
+}

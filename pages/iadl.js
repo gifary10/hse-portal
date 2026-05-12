@@ -1,5 +1,5 @@
 // pages/iadl.js
-// IADL Page - Dengan Filter Pencarian dan Filter Departemen
+// IADL Page - Dengan Filter Pencarian, Filter Departemen, dan Loading State yang Baik
 
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
@@ -14,9 +14,10 @@ export class IADLPage {
         this.searchQuery = '';
         this.filterDept = '';
         this.isLoading = false;
+        this.isRefreshing = false; // Flag untuk refresh tanpa blink
         this.totalData = 0;
         this.totalPages = 1;
-        this.allData = []; // Store all data for local filtering
+        this.allData = [];
     }
 
     // ============================================
@@ -67,10 +68,8 @@ export class IADLPage {
             
             const result = await response.json();
             
-            // Store all raw data for filtering
             if (result.status === 'success' && result.data) {
                 this.allData = this.formatData(result.data);
-                // Cache to memory for offline fallback
                 this.db.saveIADLCache(result.data);
             }
             
@@ -93,58 +92,6 @@ export class IADLPage {
         return await this.fetchFromSheets('getAll');
     }
 
-    async getIADLPaginated(page = 1, pageSize = 10, filters = {}) {
-        // If using Google Sheets API, let the API handle filtering
-        if (isGoogleSheetsEnabled() && !getWebAppUrl().includes('YOUR_WEB_APP_ID')) {
-            return await this.fetchFromSheets('getPaginated', {
-                page: page,
-                pageSize: pageSize,
-                filters: JSON.stringify(filters)
-            });
-        }
-        
-        // Local filtering mode (offline or not configured)
-        return this.getLocalFilteredData(page, pageSize, filters);
-    }
-    
-    // Local filtering when offline or using cached data
-    getLocalFilteredData(page, pageSize, filters = {}) {
-        let filteredData = [...this.allData];
-        
-        // Apply search filter
-        if (filters.search) {
-            const searchLower = filters.search.toLowerCase();
-            filteredData = filteredData.filter(item => 
-                (item.aktivitas && item.aktivitas.toLowerCase().includes(searchLower)) ||
-                (item.lokasi && item.lokasi.toLowerCase().includes(searchLower)) ||
-                (item.deskripsiAspek && item.deskripsiAspek.toLowerCase().includes(searchLower)) ||
-                (item.departemen && item.departemen.toLowerCase().includes(searchLower)) ||
-                (item.id && item.id.toLowerCase().includes(searchLower))
-            );
-        }
-        
-        // Apply department filter
-        if (filters.Departemen) {
-            filteredData = filteredData.filter(item => 
-                item.departemen === filters.Departemen
-            );
-        }
-        
-        const total = filteredData.length;
-        const totalPages = Math.ceil(total / pageSize);
-        const startIndex = (page - 1) * pageSize;
-        const paginatedData = filteredData.slice(startIndex, startIndex + pageSize);
-        
-        return {
-            status: 'local',
-            data: paginatedData,
-            total: total,
-            page: page,
-            pageSize: pageSize,
-            totalPages: totalPages
-        };
-    }
-
     // ============================================
     // DATA FORMATTING
     // ============================================
@@ -152,7 +99,6 @@ export class IADLPage {
     formatItem(item) {
         if (!item) return {};
         
-        // Mapping untuk header Google Sheets ke internal field
         const fieldMapping = {
             tanggal: ['TimeStamp', 'timestamp', 'Tanggal'],
             departemen: ['Departemen', 'departemen'],
@@ -195,7 +141,6 @@ export class IADLPage {
     // FILTER METHODS
     // ============================================
     
-    // Get unique departments from data for filter dropdown
     getUniqueDepartments() {
         const departments = new Set();
         this.allData.forEach(item => {
@@ -206,11 +151,9 @@ export class IADLPage {
         return Array.from(departments).sort();
     }
 
-    // Apply all filters to data
     applyFilters() {
         let filtered = [...this.allData];
         
-        // Apply search filter
         if (this.searchQuery) {
             const searchLower = this.searchQuery.toLowerCase();
             filtered = filtered.filter(item => 
@@ -223,7 +166,6 @@ export class IADLPage {
             );
         }
         
-        // Apply department filter
         if (this.filterDept) {
             filtered = filtered.filter(item => item.departemen === this.filterDept);
         }
@@ -236,10 +178,12 @@ export class IADLPage {
     // ============================================
     
     async render() {
-        this.showLoading();
+        // Untuk first load, tampilkan full loading
+        if (!this.isRefreshing) {
+            this.showLoading();
+        }
         
         try {
-            // Fetch all data first (only once)
             if (this.allData.length === 0) {
                 const result = await this.getAllIADL();
                 if (result.status === 'error') {
@@ -248,20 +192,16 @@ export class IADLPage {
                 }
             }
             
-            // Apply filters locally
             const filteredData = this.applyFilters();
             
-            // Update total and pagination
             this.totalData = filteredData.length;
             this.totalPages = Math.ceil(this.totalData / this.pageSize);
             
-            // Ensure current page is valid
             if (this.currentPage > this.totalPages && this.totalPages > 0) {
                 this.currentPage = this.totalPages;
             }
             if (this.currentPage < 1) this.currentPage = 1;
             
-            // Get paginated data
             const startIndex = (this.currentPage - 1) * this.pageSize;
             const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
             
@@ -286,13 +226,12 @@ export class IADLPage {
                     <p class="breadcrumb">Home / <span>IADL Monokem</span></p>
                 </div>
                 <div class="d-flex gap-sm">
-                    <button class="btn btn-outline-primary" data-action="iadl.refresh">
-                        <i class="bi bi-arrow-repeat"></i> Refresh
+                    <button class="btn btn-outline-primary" id="refreshIADLBtn" data-action="iadl.refresh">
+                        <i class="bi bi-arrow-repeat"></i> <span>Refresh</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Filter Section -->
             <div class="filter-section">
                 <div class="row">
                     <div class="col-md-5">
@@ -346,64 +285,69 @@ export class IADLPage {
                     <span class="badge-status info">Halaman ${this.currentPage} dari ${this.totalPages || 1}</span>
                 </div>
 
-                <div class="table-wrapper">
-                    <table class="data-table striped">
-                        <thead>
-                            <tr>
-                                <th class="text-center" style="width: 50px;">No.</th>
-                                <th style="min-width: 100px;">TimeStamp</th>
-                                <th style="min-width: 120px;">Departemen</th>
-                                <th style="min-width: 200px;">Aktivitas</th>
-                                <th style="min-width: 150px;">Lokasi</th>
-                                <th style="min-width: 100px;">No Hazard</th>
-                                <th style="min-width: 120px;">Klasifikasi Resiko</th>
-                                <th style="min-width: 200px;">Deskripsi Hazard</th>
-                                <th style="min-width: 150px;">Dampak</th>
-                                <th style="min-width: 130px;">Penilaian Risiko</th>
-                                <th style="min-width: 150px;">Pengendalian Risiko</th>
-                                <th style="min-width: 200px;">Deskripsi Pengendalian</th>
-                                <th style="min-width: 150px;">Risiko Setelah Pengendalian</th>
-                                <th style="min-width: 200px;">Regulasi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.length > 0 ? data.map((item, index) => this.renderTableRow(item, startIndex + index + 1)).join('') : `
-                                <tr>
-                                    <td colspan="14">
-                                        <div class="empty-state">
-                                            <i class="bi bi-inbox"></i>
-                                            <h3>Tidak ada data</h3>
-                                            <p>
-                                                ${this.searchQuery || this.filterDept ? 
-                                                    'Tidak ada data yang sesuai dengan filter yang dipilih' : 
-                                                    'Data IADL tidak ditemukan di Google Sheets'}
-                                            </p>
-                                            ${(this.searchQuery || this.filterDept) ? `
-                                                <button class="btn btn-primary mt-md" data-action="iadl.clearFilters">
-                                                    <i class="bi bi-eraser"></i> Hapus Filter
-                                                </button>
-                                            ` : `
-                                                <button class="btn btn-primary mt-md" data-action="iadl.refresh">
-                                                    <i class="bi bi-arrow-repeat"></i> Refresh Data
-                                                </button>
-                                            `}
-                                        </div>
-                                    </td>
-                                </tr>
-                            `}
-                        </tbody>
-                    </table>
+                <div class="table-wrapper" id="iadlTableWrapper">
+                    ${this.renderTable(data, startIndex)}
                 </div>
 
                 ${this.totalPages > 1 ? this.renderPagination() : ''}
             </div>
         `;
     }
+    
+    renderTable(data, startIndex) {
+        if (data.length === 0) {
+            return `
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <h3>Tidak ada data</h3>
+                    <p>
+                        ${this.searchQuery || this.filterDept ? 
+                            'Tidak ada data yang sesuai dengan filter yang dipilih' : 
+                            'Data IADL tidak ditemukan di Google Sheets'}
+                    </p>
+                    ${(this.searchQuery || this.filterDept) ? `
+                        <button class="btn btn-primary mt-md" data-action="iadl.clearFilters">
+                            <i class="bi bi-eraser"></i> Hapus Filter
+                        </button>
+                    ` : `
+                        <button class="btn btn-primary mt-md" data-action="iadl.refresh">
+                            <i class="bi bi-arrow-repeat"></i> Refresh Data
+                        </button>
+                    `}
+                </div>
+            `;
+        }
+        
+        return `
+            <table class="data-table striped">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width: 50px;">No.</th>
+                        <th style="min-width: 100px;">TimeStamp</th>
+                        <th style="min-width: 120px;">Departemen</th>
+                        <th style="min-width: 200px;">Aktivitas</th>
+                        <th style="min-width: 150px;">Lokasi</th>
+                        <th style="min-width: 100px;">No Hazard</th>
+                        <th style="min-width: 120px;">Klasifikasi Resiko</th>
+                        <th style="min-width: 200px;">Deskripsi Hazard</th>
+                        <th style="min-width: 150px;">Dampak</th>
+                        <th style="min-width: 130px;">Penilaian Risiko</th>
+                        <th style="min-width: 150px;">Pengendalian Risiko</th>
+                        <th style="min-width: 200px;">Deskripsi Pengendalian</th>
+                        <th style="min-width: 150px;">Risiko Setelah Pengendalian</th>
+                        <th style="min-width: 300px;">Regulasi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map((item, index) => this.renderTableRow(item, startIndex + index + 1)).join('')}
+                </tbody>
+            </table>
+        `;
+    }
 
     renderTableRow(item, rowNumber) {
         if (!item) return '';
         
-        // Highlight search keyword in aktivitas and lokasi
         const highlightText = (text) => {
             if (!this.searchQuery || !text) return this.escapeHtml(text || '-');
             const regex = new RegExp(`(${this.escapeRegex(this.searchQuery)})`, 'gi');
@@ -478,17 +422,24 @@ export class IADLPage {
     }
 
     // ============================================
-    // ACTION METHODS
+    // ACTION METHODS (dengan perbaikan UX)
     // ============================================
     
     async goToPage(params, element) {
         this.currentPage = params.page;
-        await this.refreshTable();
+        await this.updateTableOnly();
     }
 
     async refresh(params, element) {
-        this.showLoading();
-        // Clear cache and reload
+        const refreshBtn = document.getElementById('refreshIADLBtn');
+        
+        // Set loading state pada tombol
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> <span>Memuat...</span>';
+        }
+        
+        // Clear cache dan reload
         this.allData = [];
         this.currentPage = 1;
         this.searchQuery = '';
@@ -502,25 +453,42 @@ export class IADLPage {
             if (filterInput) filterInput.value = '';
         }, 100);
         
-        await this.refreshTable(true);
-        toast('Data IADL berhasil direfresh', 'success');
-    }
-
-    async search(params, element) {
-        const searchInput = document.getElementById('searchIADLInput');
-        if (searchInput) {
-            this.searchQuery = searchInput.value;
-            this.currentPage = 1; // Reset to first page when searching
-            await this.refreshTable();
+        try {
+            // Fetch data baru dari server
+            await this.getAllIADL();
+            
+            // Update tabel saja, tanpa merender ulang seluruh halaman
+            this.isRefreshing = true;
+            await this.updateTableOnly();
+            this.isRefreshing = false;
+            
+            toast('Data terbaru sudah ditampilkan', 'success');
+        } catch (error) {
+            toast('Gagal memuat data. Silakan coba lagi.', 'error');
+        } finally {
+            // Kembalikan tombol
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
+            }
         }
     }
 
-    async filterDepartment(params, element) {
+    async search() {
+        const searchInput = document.getElementById('searchIADLInput');
+        if (searchInput) {
+            this.searchQuery = searchInput.value;
+            this.currentPage = 1;
+            await this.updateTableOnly();
+        }
+    }
+
+    async filterDepartment() {
         const filterInput = document.getElementById('filterDeptInput');
         if (filterInput) {
             this.filterDept = filterInput.value;
-            this.currentPage = 1; // Reset to first page when filtering
-            await this.refreshTable();
+            this.currentPage = 1;
+            await this.updateTableOnly();
         }
     }
     
@@ -529,7 +497,6 @@ export class IADLPage {
         this.filterDept = '';
         this.currentPage = 1;
         
-        // Clear input values
         setTimeout(() => {
             const searchInput = document.getElementById('searchIADLInput');
             const filterInput = document.getElementById('filterDeptInput');
@@ -537,22 +504,71 @@ export class IADLPage {
             if (filterInput) filterInput.value = '';
         }, 100);
         
-        await this.refreshTable();
+        await this.updateTableOnly();
         toast('Filter dihapus', 'info');
     }
 
-    async refreshTable(forceRefresh = false) {
-        if (forceRefresh) {
-            // Force reload from Google Sheets
-            this.allData = [];
+    // Method baru: update tabel tanpa blink
+    async updateTableOnly() {
+        const tableWrapper = document.getElementById('iadlTableWrapper');
+        const paginationContainer = document.querySelector('.app-card .d-flex.justify-content-between');
+        
+        if (!tableWrapper) {
+            // Jika elemen tidak ditemukan, fallback ke full render
+            const mainContent = document.getElementById('mainContent');
+            if (mainContent) {
+                const html = await this.render();
+                mainContent.innerHTML = html;
+                this.attachEventListeners();
+            }
+            return;
         }
         
-        const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
-            const html = await this.render();
-            mainContent.innerHTML = html;
-            this.attachEventListeners();
+        // Apply filters
+        const filteredData = this.applyFilters();
+        
+        // Update pagination info
+        this.totalData = filteredData.length;
+        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
+        // Get current page data
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
+        
+        // Update tabel dengan animasi subtle
+        tableWrapper.style.opacity = '0.5';
+        tableWrapper.innerHTML = this.renderTable(paginatedData, startIndex);
+        
+        requestAnimationFrame(() => {
+            tableWrapper.style.transition = 'opacity 0.2s ease';
+            tableWrapper.style.opacity = '1';
+        });
+        
+        // Update pagination jika ada
+        const cardHeader = tableWrapper.closest('.app-card');
+        if (cardHeader) {
+            const badgeStatus = cardHeader.querySelector('.card-header .badge-status');
+            if (badgeStatus) {
+                badgeStatus.textContent = `Halaman ${this.currentPage} dari ${this.totalPages || 1}`;
+            }
+            
+            // Update pagination
+            const existingPagination = cardHeader.querySelector('.border-top');
+            if (this.totalPages > 1) {
+                const newPagination = this.renderPagination();
+                if (existingPagination) {
+                    existingPagination.outerHTML = newPagination;
+                } else {
+                    cardHeader.insertAdjacentHTML('beforeend', newPagination);
+                }
+            } else {
+                if (existingPagination) {
+                    existingPagination.remove();
+                }
+            }
         }
+        
+        this.attachEventListeners();
     }
 
     // ============================================
@@ -560,11 +576,14 @@ export class IADLPage {
     // ============================================
     
     attachEventListeners() {
-        // Search input with debounce
         const searchInput = document.getElementById('searchIADLInput');
         if (searchInput) {
             let timeout;
-            searchInput.addEventListener('input', (e) => {
+            // Hapus event listener lama dengan clone
+            const newSearchInput = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+            
+            newSearchInput.addEventListener('input', (e) => {
                 clearTimeout(timeout);
                 timeout = setTimeout(() => {
                     this.search();
@@ -572,10 +591,12 @@ export class IADLPage {
             });
         }
         
-        // Filter select
         const filterInput = document.getElementById('filterDeptInput');
         if (filterInput) {
-            filterInput.addEventListener('change', () => {
+            const newFilterInput = filterInput.cloneNode(true);
+            filterInput.parentNode.replaceChild(newFilterInput, filterInput);
+            
+            newFilterInput.addEventListener('change', () => {
                 this.filterDepartment();
             });
         }
@@ -621,18 +642,73 @@ export class IADLPage {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    renderSkeleton() {
+        const skeletonRows = Array(5).fill(0).map(() => `
+            <tr class="skeleton-row">
+                <td class="text-center"><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 30px; margin: 0 auto;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 80px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 100px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 150px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 120px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 80px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 90px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 160px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 130px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 100px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 140px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 160px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 130px;"></div></td>
+                <td><div style="height: 1rem; background: #e2e8f0; border-radius: 4px; width: 150px;"></div></td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table striped">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width: 50px;">No.</th>
+                        <th>TimeStamp</th>
+                        <th>Departemen</th>
+                        <th>Aktivitas</th>
+                        <th>Lokasi</th>
+                        <th>No Hazard</th>
+                        <th>Klasifikasi Resiko</th>
+                        <th>Deskripsi Hazard</th>
+                        <th>Dampak</th>
+                        <th>Penilaian Risiko</th>
+                        <th>Pengendalian Risiko</th>
+                        <th>Deskripsi Pengendalian</th>
+                        <th>Risiko Setelah</th>
+                        <th>Regulasi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${skeletonRows}
+                </tbody>
+            </table>
+        `;
+    }
+
     showLoading() {
         this.isLoading = true;
         const mainContent = document.getElementById('mainContent');
-        if (mainContent && !mainContent.innerHTML.includes('spinner-border')) {
+        if (mainContent && !mainContent.querySelector('#iadlSkeletonLoader')) {
             mainContent.innerHTML = `
-                <div class="app-card">
-                    <div class="empty-state">
-                        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <h3 class="mt-md">Memuat Data IADL...</h3>
-                        <p>Mengambil data dari Google Sheets</p>
+                <div class="page-header">
+                    <div class="page-header-left">
+                        <h1 class="page-title">IADL Monokem</h1>
+                        <p class="breadcrumb">Home / <span>IADL Monokem</span></p>
+                    </div>
+                </div>
+                <div class="app-card" id="iadlSkeletonLoader">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="bi bi-file-earmark-text"></i> 
+                            Identifikasi Aspek dan Dampak Lingkungan (IADL)
+                        </h3>
+                    </div>
+                    <div class="table-wrapper">
+                        ${this.renderSkeleton()}
                     </div>
                 </div>
             `;
@@ -655,7 +731,7 @@ export class IADLPage {
                 <div class="empty-state">
                     <i class="bi bi-exclamation-triangle" style="color: var(--danger); font-size: 3rem;"></i>
                     <h2>Gagal Memuat Data</h2>
-                    <p>${this.escapeHtml(message || 'Terjadi kesalahan saat menghubungi Google Sheets')}</p>
+                    <p>${this.escapeHtml(message || 'Terjadi kesalahan saat menghubungi server')}</p>
                     <button class="btn btn-primary mt-md" data-action="iadl.refresh">
                         <i class="bi bi-arrow-repeat"></i> Coba Lagi
                     </button>
