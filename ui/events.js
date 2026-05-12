@@ -11,13 +11,11 @@ export function initEventDelegation(app) {
 }
 
 function handleDocumentClick(e) {
-    // Handle modal backdrop click
     if (e.target.id === 'mainModal') {
         closeModal();
         return;
     }
     
-    // Handle page navigation from sidebar or any [data-page] element
     const pageElement = e.target.closest('[data-page]');
     if (pageElement) {
         e.preventDefault();
@@ -28,7 +26,6 @@ function handleDocumentClick(e) {
         return;
     }
     
-    // Handle logout action
     const logoutElement = e.target.closest('[data-action="auth.logout"]');
     if (logoutElement) {
         e.preventDefault();
@@ -38,19 +35,21 @@ function handleDocumentClick(e) {
         return;
     }
     
-    // Handle any element with data-action attribute
     const actionElement = e.target.closest('[data-action]');
     if (!actionElement) return;
     
-    // Skip if it's a submit button inside a form with data-action (will be handled by submit event)
     if (actionElement.type === 'submit' && actionElement.closest('form[data-action]')) {
+        return;
+    }
+    
+    if (actionElement.disabled) {
+        e.preventDefault();
         return;
     }
     
     const action = actionElement.dataset.action;
     let params = {};
     
-    // Parse params if exists
     try {
         if (actionElement.dataset.params) {
             params = JSON.parse(actionElement.dataset.params);
@@ -59,27 +58,33 @@ function handleDocumentClick(e) {
         console.warn('Invalid params JSON:', actionElement.dataset.params);
     }
     
-    // Execute the action
     executeAction(action, params, actionElement, null);
 }
 
 function handleDocumentSubmit(e) {
     const form = e.target;
     
-    // Only handle forms with data-action attribute
     if (!form.dataset || !form.dataset.action) return;
     
     e.preventDefault();
     e.stopPropagation();
 
-    // Get submitter data if available (which button was clicked)
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn && submitBtn.disabled) return;
+    
     let submitter = e.submitter;
     let submitterData = {};
     if (submitter && submitter.name && submitter.value) {
         submitterData[submitter.name] = submitter.value;
     }
     
-    // Collect form data
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        const originalHTML = submitBtn.innerHTML;
+        submitBtn.dataset.originalText = originalHTML;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Memproses...';
+    }
+    
     const formData = new FormData(form);
     let params = {};
     formData.forEach((value, key) => {
@@ -87,12 +92,16 @@ function handleDocumentSubmit(e) {
     });
     params = { ...params, ...submitterData };
     
-    // Execute the action
+    // Check if action button was used (saveDraft)
+    if (submitter && submitter.dataset && submitter.dataset.action) {
+        executeAction(submitter.dataset.action, params, submitter, form);
+        return;
+    }
+    
     executeAction(form.dataset.action, params, form, form);
 }
 
 async function executeAction(action, params, element, formElement) {
-    // Handle navigation action
     if (action === 'navigate') {
         if (params.page) {
             await appInstance.router.navigateTo(params.page, params);
@@ -100,7 +109,6 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
-    // Handle logout action
     if (action === 'auth.logout') {
         if (appInstance.router.pages.auth) {
             appInstance.router.pages.auth.logout();
@@ -108,7 +116,6 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
-    // Handle confirm modal confirm button
     if (action === 'confirmModal.confirm') {
         closeModal();
         if (window._confirmModalCallback && typeof window._confirmModalCallback.onConfirm === 'function') {
@@ -117,7 +124,6 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
 
-    // Handle confirm modal cancel button
     if (action === 'confirmModal.cancel') {
         closeModal();
         if (window._confirmModalCallback && typeof window._confirmModalCallback.onCancel === 'function') {
@@ -126,13 +132,11 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
-    // Handle modal close
     if (action === 'modal.close') {
         closeModal();
         return;
     }
     
-    // Parse action format: pageName.methodName
     const parts = action.split('.');
     if (parts.length !== 2) {
         console.warn(`Invalid action format: ${action}. Expected format: pageName.methodName`);
@@ -141,37 +145,55 @@ async function executeAction(action, params, element, formElement) {
     
     const [pageName, methodName] = parts;
     
-    // Find the page instance
-    if (appInstance.router.pages[pageName]) {
-        const page = appInstance.router.pages[pageName];
+    const pageKeyMap = {
+        'auth': 'auth',
+        'iadl': 'iadl',
+        'userManagement': 'userManagement',
+        'masterKPI': 'masterKPI',
+        'masterTemplate': 'masterTemplate',
+        'otpCreate': 'otpCreate',
+        'otpHistory': 'otpHistory',
+        'otpReview': 'otpReview'
+    };
+    
+    const pageKey = pageKeyMap[pageName] || pageName;
+    
+    if (appInstance.router.pages[pageKey]) {
+        const page = appInstance.router.pages[pageKey];
         if (typeof page[methodName] === 'function') {
             try {
                 if (formElement) {
-                    // Check if form is still connected to DOM
                     if (!formElement.isConnected) {
                         console.warn('Form is not connected to DOM');
                         return;
                     }
-                    await page[methodName](params, formElement);
+                    await page[methodName](formElement);
                 } else {
                     await page[methodName](params, element);
                 }
             } catch (error) {
                 console.error(`Error executing ${action}:`, error);
-                // Show error toast if available
                 if (window.toast) {
                     window.toast(`Terjadi kesalahan: ${error.message}`, 'error');
                 }
+            } finally {
+                if (formElement) {
+                    const submitBtn = formElement.querySelector('button[type="submit"]');
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        const originalText = submitBtn.dataset.originalText || submitBtn.innerHTML;
+                        submitBtn.innerHTML = originalText;
+                    }
+                }
             }
         } else {
-            console.warn(`Method not found: ${methodName} in page ${pageName}`);
+            console.warn(`Method not found: ${methodName} in page ${pageName} (key: ${pageKey})`);
         }
     } else {
-        console.warn(`Page not found: ${pageName}`);
+        console.warn(`Page not found: ${pageName} (key: ${pageKey})`);
     }
 }
 
-// Helper function to manually trigger actions (useful for programmatic calls)
 export async function triggerAction(action, params = {}) {
     if (!appInstance) {
         console.warn('App instance not initialized');
@@ -198,7 +220,6 @@ export async function triggerAction(action, params = {}) {
     }
 }
 
-// Export for use in other modules
 export function getAppInstance() {
     return appInstance;
 }
