@@ -76,7 +76,7 @@ export class AppState {
             { 
                 section: 'Master Data', 
                 items: [
-                    { id: 'master-kpi', label: 'KPI Master', icon: 'bi-bullseye', page: 'master-kpi' },
+                    { id: 'master-kpi', label: 'Master KPI', icon: 'bi-bullseye', page: 'master-kpi' },
                     { id: 'master-template', label: 'Objective Template', icon: 'bi-clipboard', page: 'master-template' },
                     { id: 'iadl-monokem', label: 'IADL Monokem', icon: 'bi-file-earmark-text', page: 'iadl-monokem' }
                 ]

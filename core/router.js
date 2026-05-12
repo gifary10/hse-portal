@@ -3,6 +3,11 @@ import { AuthPage } from '../pages/auth.js';
 import { PlaceholderPage } from '../pages/placeholder.js';
 import { IADLPage } from '../pages/iadl.js';
 import { UserManagementPage } from '../pages/user-management.js';
+import { MasterKPIPage } from '../pages/master-kpi.js';
+import { MasterTemplatePage } from '../pages/master-template.js';
+import { OTPCreatePage } from '../pages/otp-create.js';
+import { OTPHistoryPage } from '../pages/otp-history.js';
+import { OTPReviewPage } from '../pages/otp-review.js';
 
 export class Router {
     constructor(state, db) {
@@ -10,6 +15,7 @@ export class Router {
         this.db = db;
         this.pages = {};
         this.layout = null;
+        this.navigating = false;
         this.initPages();
     }
 
@@ -18,7 +24,12 @@ export class Router {
             auth: new AuthPage(this.state, this.db, this),
             placeholder: new PlaceholderPage(this.state, this.db, this),
             iadl: new IADLPage(this.state, this.db, this),
-            userManagement: new UserManagementPage(this.state, this.db, this)
+            userManagement: new UserManagementPage(this.state, this.db, this),
+            masterKPI: new MasterKPIPage(this.state, this.db, this),
+            masterTemplate: new MasterTemplatePage(this.state, this.db, this),
+            otpCreate: new OTPCreatePage(this.state, this.db, this),
+            otpHistory: new OTPHistoryPage(this.state, this.db, this),
+            otpReview: new OTPReviewPage(this.state, this.db, this)
         };
     }
 
@@ -26,20 +37,20 @@ export class Router {
         const hasUser = this.state.currentUser !== null;
         
         if (hasUser) {
-            const savedPage = sessionStorage.getItem('currentPage');
-            const defaultPage = 'dashboard';
-            
-            if (savedPage && this.isValidPage(savedPage)) {
-                this.navigateTo(savedPage);
-            } else {
-                this.navigateTo(defaultPage);
-            }
+            this.navigateTo('dashboard');
         } else {
             this.navigateTo('login');
         }
     }
 
     async navigateTo(page, params = {}) {
+        if (this.navigating) {
+            console.warn('Navigation in progress, ignoring request to:', page);
+            return;
+        }
+        
+        this.navigating = true;
+        
         if (!this.state.currentUser && page !== 'login') {
             page = 'login';
         }
@@ -48,48 +59,75 @@ export class Router {
             page = 'dashboard';
         }
 
-        this.state.currentPage = page;
-        
-        if (page !== 'login') {
-            sessionStorage.setItem('currentPage', page);
-        }
-        
-        // Handle async render
-        const content = await this.renderPage(page);
-        
         const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
-            mainContent.innerHTML = content;
-        } else {
+        if (!mainContent) {
             console.error('Element #mainContent tidak ditemukan');
+            this.navigating = false;
             return;
         }
         
-        this.updateAfterNavigation();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        this.updateDocumentTitle(page);
+        mainContent.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        mainContent.style.opacity = '0';
+        mainContent.style.transform = 'translateY(10px)';
+        
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        try {
+            this.state.currentPage = page;
+            
+            // Pass params ke render untuk halaman yang membutuhkan (seperti otp-review)
+            const content = await this.renderPage(page, params);
+            
+            mainContent.innerHTML = content;
+            
+            // Call afterRender if exists
+            if (this.pages[this.getPageKey(page)] && typeof this.pages[this.getPageKey(page)].afterRender === 'function') {
+                this.pages[this.getPageKey(page)].afterRender();
+            }
+            
+            requestAnimationFrame(() => {
+                mainContent.style.opacity = '1';
+                mainContent.style.transform = 'translateY(0)';
+            });
+            
+            this.updateAfterNavigation();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            this.updateDocumentTitle(page);
+            
+        } catch (error) {
+            console.error('Navigation error:', error);
+            mainContent.innerHTML = this.renderErrorState('Error Navigasi', error.message);
+            mainContent.style.opacity = '1';
+            mainContent.style.transform = 'translateY(0)';
+        } finally {
+            this.navigating = false;
+        }
     }
 
-    async renderPage(page) {
-        switch (page) {
-            case 'login':
-                return this.pages.auth.render();
-                
-            case 'iadl-monokem':
-                return await this.pages.iadl.render();
-            
-            case 'user-management':
-                return await this.pages.userManagement.render();
-                
-            default:
-                if (this.isValidPlaceholderPage(page)) {
-                    return this.pages.placeholder.render(page);
-                }
-                
-                console.warn(`Halaman tidak dikenal: ${page}, redirect ke dashboard`);
-                this.state.currentPage = 'dashboard';
-                return this.pages.placeholder.render('dashboard');
+    getPageKey(page) {
+        const pageKeyMap = {
+            'login': 'auth',
+            'iadl-monokem': 'iadl',
+            'user-management': 'userManagement',
+            'master-kpi': 'masterKPI',
+            'master-template': 'masterTemplate',
+            'otp-create': 'otpCreate',
+            'otp-history': 'otpHistory',
+            'otp-review': 'otpReview'
+        };
+        return pageKeyMap[page] || 'placeholder';
+    }
+
+    async renderPage(page, params = {}) {
+        const pageKey = this.getPageKey(page);
+        
+        if (this.pages[pageKey]) {
+            return await this.pages[pageKey].render(page, params);
         }
+        
+        console.warn(`Halaman tidak dikenal: ${page}, redirect ke dashboard`);
+        this.state.currentPage = 'dashboard';
+        return this.pages.placeholder.render('dashboard');
     }
 
     updateAfterNavigation() {
@@ -148,13 +186,6 @@ export class Router {
         return validPages.includes(page);
     }
 
-    isValidPlaceholderPage(page) {
-        return this.isValidPage(page) && 
-               page !== 'login' && 
-               page !== 'iadl-monokem' && 
-               page !== 'user-management';
-    }
-
     renderErrorState(title, message) {
         return `
             <div class="page-header">
@@ -191,6 +222,15 @@ export class Router {
         if (mainContent) {
             const content = await this.renderPage(currentPage);
             mainContent.innerHTML = content;
+            
+            if (this.pages[this.getPageKey(currentPage)] && typeof this.pages[this.getPageKey(currentPage)].afterRender === 'function') {
+                this.pages[this.getPageKey(currentPage)].afterRender();
+            }
+            
+            requestAnimationFrame(() => {
+                mainContent.style.opacity = '1';
+                mainContent.style.transform = 'translateY(0)';
+            });
         }
         
         this.updateAfterNavigation();
