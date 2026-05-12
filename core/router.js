@@ -8,6 +8,11 @@ import { MasterTemplatePage } from '../pages/master-template.js';
 import { OTPCreatePage } from '../pages/otp-create.js';
 import { OTPHistoryPage } from '../pages/otp-history.js';
 import { OTPReviewPage } from '../pages/otp-review.js';
+import { TemuanInputPage } from '../pages/temuan-input.js';
+import { TemuanDaftarPage } from '../pages/temuan-daftar.js';
+import { TemuanTindakLanjutPage } from '../pages/temuan-tindak-lanjut.js';
+import { ApprovalManagementPage } from '../pages/approval-management.js';
+import { ApprovalHistoryPage } from '../pages/approval-history.js';
 
 export class Router {
     constructor(state, db) {
@@ -29,7 +34,12 @@ export class Router {
             masterTemplate: new MasterTemplatePage(this.state, this.db, this),
             otpCreate: new OTPCreatePage(this.state, this.db, this),
             otpHistory: new OTPHistoryPage(this.state, this.db, this),
-            otpReview: new OTPReviewPage(this.state, this.db, this)
+            otpReview: new OTPReviewPage(this.state, this.db, this),
+            temuanInput: new TemuanInputPage(this.state, this.db, this),
+            temuanDaftar: new TemuanDaftarPage(this.state, this.db, this),
+            temuanTindakLanjut: new TemuanTindakLanjutPage(this.state, this.db, this),
+            approvalManagement: new ApprovalManagementPage(this.state, this.db, this),
+            approvalHistory: new ApprovalHistoryPage(this.state, this.db, this)
         };
     }
 
@@ -75,12 +85,10 @@ export class Router {
         try {
             this.state.currentPage = page;
             
-            // Pass params ke render untuk halaman yang membutuhkan (seperti otp-review)
             const content = await this.renderPage(page, params);
             
             mainContent.innerHTML = content;
             
-            // Call afterRender if exists
             if (this.pages[this.getPageKey(page)] && typeof this.pages[this.getPageKey(page)].afterRender === 'function') {
                 this.pages[this.getPageKey(page)].afterRender();
             }
@@ -113,7 +121,12 @@ export class Router {
             'master-template': 'masterTemplate',
             'otp-create': 'otpCreate',
             'otp-history': 'otpHistory',
-            'otp-review': 'otpReview'
+            'otp-review': 'otpReview',
+            'temuan-input': 'temuanInput',
+            'temuan-daftar': 'temuanDaftar',
+            'temuan-tindak-lanjut': 'temuanTindakLanjut',
+            'approval-management': 'approvalManagement',
+            'approval-history': 'approvalHistory'
         };
         return pageKeyMap[page] || 'placeholder';
     }
