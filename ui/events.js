@@ -11,11 +11,13 @@ export function initEventDelegation(app) {
 }
 
 function handleDocumentClick(e) {
+    // Handle modal backdrop click
     if (e.target.id === 'mainModal') {
         closeModal();
         return;
     }
     
+    // Handle [data-page] navigation
     const pageElement = e.target.closest('[data-page]');
     if (pageElement) {
         e.preventDefault();
@@ -26,6 +28,7 @@ function handleDocumentClick(e) {
         return;
     }
     
+    // Handle logout action
     const logoutElement = e.target.closest('[data-action="auth.logout"]');
     if (logoutElement) {
         e.preventDefault();
@@ -35,13 +38,16 @@ function handleDocumentClick(e) {
         return;
     }
     
+    // Handle action elements
     const actionElement = e.target.closest('[data-action]');
     if (!actionElement) return;
     
+    // Skip if it's a submit button inside a form with data-action (will be handled by form submit)
     if (actionElement.type === 'submit' && actionElement.closest('form[data-action]')) {
         return;
     }
     
+    // Skip if disabled
     if (actionElement.disabled) {
         e.preventDefault();
         return;
@@ -64,20 +70,24 @@ function handleDocumentClick(e) {
 function handleDocumentSubmit(e) {
     const form = e.target;
     
+    // Only handle forms with data-action
     if (!form.dataset || !form.dataset.action) return;
     
     e.preventDefault();
     e.stopPropagation();
 
+    // Prevent double submission
     const submitBtn = form.querySelector('button[type="submit"]');
     if (submitBtn && submitBtn.disabled) return;
     
+    // Get submitter data
     let submitter = e.submitter;
     let submitterData = {};
     if (submitter && submitter.name && submitter.value) {
         submitterData[submitter.name] = submitter.value;
     }
     
+    // Show loading state on submit button
     if (submitBtn) {
         submitBtn.disabled = true;
         const originalHTML = submitBtn.innerHTML;
@@ -85,6 +95,7 @@ function handleDocumentSubmit(e) {
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Memproses...';
     }
     
+    // Collect form data
     const formData = new FormData(form);
     let params = {};
     formData.forEach((value, key) => {
@@ -92,7 +103,7 @@ function handleDocumentSubmit(e) {
     });
     params = { ...params, ...submitterData };
     
-    // Check if action button was used (saveDraft)
+    // If submitter has its own data-action, use that instead
     if (submitter && submitter.dataset && submitter.dataset.action) {
         executeAction(submitter.dataset.action, params, submitter, form);
         return;
@@ -102,6 +113,7 @@ function handleDocumentSubmit(e) {
 }
 
 async function executeAction(action, params, element, formElement) {
+    // Handle navigation action
     if (action === 'navigate') {
         if (params.page) {
             await appInstance.router.navigateTo(params.page, params);
@@ -109,6 +121,7 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
+    // Handle logout
     if (action === 'auth.logout') {
         if (appInstance.router.pages.auth) {
             appInstance.router.pages.auth.logout();
@@ -116,6 +129,7 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
+    // Handle confirm modal actions
     if (action === 'confirmModal.confirm') {
         closeModal();
         if (window._confirmModalCallback && typeof window._confirmModalCallback.onConfirm === 'function') {
@@ -132,11 +146,13 @@ async function executeAction(action, params, element, formElement) {
         return;
     }
     
+    // Handle modal close
     if (action === 'modal.close') {
         closeModal();
         return;
     }
     
+    // Parse action string: "pageName.methodName"
     const parts = action.split('.');
     if (parts.length !== 2) {
         console.warn(`Invalid action format: ${action}. Expected format: pageName.methodName`);
@@ -145,6 +161,7 @@ async function executeAction(action, params, element, formElement) {
     
     const [pageName, methodName] = parts;
     
+    // Map action page names to router page keys
     const pageKeyMap = {
         'auth': 'auth',
         'iadl': 'iadl',
@@ -153,22 +170,32 @@ async function executeAction(action, params, element, formElement) {
         'masterTemplate': 'masterTemplate',
         'otpCreate': 'otpCreate',
         'otpHistory': 'otpHistory',
-        'otpReview': 'otpReview'
+        'otpReview': 'otpReview',
+        'temuanInput': 'temuanInput',
+        'temuanDaftar': 'temuanDaftar',
+        'temuanTindakLanjut': 'temuanTindakLanjut',
+        'approvalManagement': 'approvalManagement',
+        'approvalHistory': 'approvalHistory'
     };
     
     const pageKey = pageKeyMap[pageName] || pageName;
     
+    // Execute the method on the page instance
     if (appInstance.router.pages[pageKey]) {
         const page = appInstance.router.pages[pageKey];
         if (typeof page[methodName] === 'function') {
             try {
+                // If formElement is provided, pass it as the first argument (legacy support)
                 if (formElement) {
+                    // Check if form is still connected to DOM
                     if (!formElement.isConnected) {
                         console.warn('Form is not connected to DOM');
                         return;
                     }
+                    // Call with (formElement) for backward compatibility
                     await page[methodName](formElement);
                 } else {
+                    // Call with (params, element)
                     await page[methodName](params, element);
                 }
             } catch (error) {
@@ -177,6 +204,7 @@ async function executeAction(action, params, element, formElement) {
                     window.toast(`Terjadi kesalahan: ${error.message}`, 'error');
                 }
             } finally {
+                // Re-enable submit button if form exists
                 if (formElement) {
                     const submitBtn = formElement.querySelector('button[type="submit"]');
                     if (submitBtn) {
