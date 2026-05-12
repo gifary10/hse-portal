@@ -59,7 +59,6 @@ export class AuthPage {
         const password = formData.get('password');
         
         if (!username || !password) {
-            toast('Username dan password harus diisi', 'error');
             return;
         }
         

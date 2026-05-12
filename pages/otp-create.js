@@ -448,7 +448,6 @@ export class OTPCreatePage {
         // Ambil form dari DOM
         const form = document.getElementById('otpCreateForm');
         if (!form) {
-            toast('Form tidak ditemukan', 'error');
             return;
         }
         
@@ -460,12 +459,10 @@ export class OTPCreatePage {
         
         // Validasi
         if (!data.templateCode || !data.kpiCode || !data.programCode) {
-            toast('Mohon lengkapi semua field yang wajib diisi', 'error');
             return;
         }
         
         if (!data.target || !data.timeline || !data.weight || !data.owner) {
-            toast('Mohon lengkapi semua field yang wajib diisi', 'error');
             return;
         }
         
@@ -551,7 +548,6 @@ export class OTPCreatePage {
         // Ambil form dari DOM
         const form = document.getElementById('otpCreateForm');
         if (!form) {
-            toast('Form tidak ditemukan', 'error');
             return;
         }
         
