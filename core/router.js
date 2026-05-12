@@ -13,6 +13,8 @@ import { TemuanDaftarPage } from '../pages/temuan-daftar.js';
 import { TemuanTindakLanjutPage } from '../pages/temuan-tindak-lanjut.js';
 import { ApprovalManagementPage } from '../pages/approval-management.js';
 import { ApprovalHistoryPage } from '../pages/approval-history.js';
+import { ManagementReviewPage } from '../pages/management-review.js';
+import { ManagementDecisionPage } from '../pages/management-decision.js';
 
 export class Router {
     constructor(state, db) {
@@ -39,7 +41,9 @@ export class Router {
             temuanDaftar: new TemuanDaftarPage(this.state, this.db, this),
             temuanTindakLanjut: new TemuanTindakLanjutPage(this.state, this.db, this),
             approvalManagement: new ApprovalManagementPage(this.state, this.db, this),
-            approvalHistory: new ApprovalHistoryPage(this.state, this.db, this)
+            approvalHistory: new ApprovalHistoryPage(this.state, this.db, this),
+            managementReview: new ManagementReviewPage(this.state, this.db, this),
+            managementDecision: new ManagementDecisionPage(this.state, this.db, this)
         };
     }
 
@@ -126,7 +130,9 @@ export class Router {
             'temuan-daftar': 'temuanDaftar',
             'temuan-tindak-lanjut': 'temuanTindakLanjut',
             'approval-management': 'approvalManagement',
-            'approval-history': 'approvalHistory'
+            'approval-history': 'approvalHistory',
+            'management-review': 'managementReview',
+            'management-decision': 'managementDecision'
         };
         return pageKeyMap[page] || 'placeholder';
     }
