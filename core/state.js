@@ -66,8 +66,8 @@ export class AppState {
                 section: 'Monitoring',
                 items: [
                     { id: 'monitoring', label: 'Progress Monitoring', icon: 'bi-graph-up', page: 'monitoring' },
-                    { id: 'monitoring-all', label: 'All Monitoring', icon: 'bi-graph-up', page: 'monitoring-all' },
-                    { id: 'monitoring-exec', label: 'Monitoring Overview', icon: 'bi-graph-up', page: 'monitoring-exec' }
+                    { id: 'monitoring-all', label: 'All Monitoring', icon: 'bi-graph-up-arrow', page: 'monitoring-all' },
+                    { id: 'monitoring-exec', label: 'Monitoring Overview', icon: 'bi-speedometer', page: 'monitoring-exec' }
                 ]
             },
             temuan: {
@@ -129,7 +129,7 @@ export class AppState {
                 'dashboard',
                 'otpManagement',
                 'approval',
-                'monitoring',
+                { section: 'monitoring', items: ['monitoring', 'monitoring-all'] },
                 'temuan',
                 { section: 'masterData', items: ['master-template', 'iadl-monokem'] },
                 { section: 'managementReview', items: ['management-review'] },
@@ -141,7 +141,7 @@ export class AppState {
                 'dashboard',
                 { section: 'otpManagement', items: ['otp-history', 'otp-review'] },
                 'approval',
-                'monitoring',
+                { section: 'monitoring', items: ['monitoring-exec'] },
                 { section: 'temuan', items: ['temuan-daftar', 'temuan-tindak-lanjut'] },
                 { section: 'masterData', items: ['master-kpi', 'master-template'] },
                 'managementReview',

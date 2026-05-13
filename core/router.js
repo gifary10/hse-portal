@@ -1,6 +1,7 @@
 // core/router.js
 import { AuthPage } from '../pages/auth.js';
 import { PlaceholderPage } from '../pages/placeholder.js';
+import { DashboardPage } from '../pages/dashboard.js';
 import { IADLPage } from '../pages/iadl.js';
 import { UserManagementPage } from '../pages/user-management.js';
 import { MasterKPIPage } from '../pages/master-kpi.js';
@@ -15,6 +16,12 @@ import { ApprovalManagementPage } from '../pages/approval-management.js';
 import { ApprovalHistoryPage } from '../pages/approval-history.js';
 import { ManagementReviewPage } from '../pages/management-review.js';
 import { ManagementDecisionPage } from '../pages/management-decision.js';
+import { ReportsPage } from '../pages/reports.js';
+import { ReportsHSEPage } from '../pages/reports-hse.js';
+import { ExecutiveReportsPage } from '../pages/executive-reports.js';
+import { MonitoringPage } from '../pages/monitoring.js';
+import { MonitoringAllPage } from '../pages/monitoring-all.js';
+import { MonitoringExecPage } from '../pages/monitoring-exec.js';
 
 export class Router {
     constructor(state, db) {
@@ -30,6 +37,7 @@ export class Router {
         this.pages = {
             auth: new AuthPage(this.state, this.db, this),
             placeholder: new PlaceholderPage(this.state, this.db, this),
+            dashboard: new DashboardPage(this.state, this.db, this),
             iadl: new IADLPage(this.state, this.db, this),
             userManagement: new UserManagementPage(this.state, this.db, this),
             masterKPI: new MasterKPIPage(this.state, this.db, this),
@@ -43,7 +51,13 @@ export class Router {
             approvalManagement: new ApprovalManagementPage(this.state, this.db, this),
             approvalHistory: new ApprovalHistoryPage(this.state, this.db, this),
             managementReview: new ManagementReviewPage(this.state, this.db, this),
-            managementDecision: new ManagementDecisionPage(this.state, this.db, this)
+            managementDecision: new ManagementDecisionPage(this.state, this.db, this),
+            reports: new ReportsPage(this.state, this.db, this),
+            reportsHSE: new ReportsHSEPage(this.state, this.db, this),
+            executiveReports: new ExecutiveReportsPage(this.state, this.db, this),
+            monitoring: new MonitoringPage(this.state, this.db, this),
+            monitoringAll: new MonitoringAllPage(this.state, this.db, this),
+            monitoringExec: new MonitoringExecPage(this.state, this.db, this)
         };
     }
 
@@ -93,8 +107,9 @@ export class Router {
             
             mainContent.innerHTML = content;
             
-            if (this.pages[this.getPageKey(page)] && typeof this.pages[this.getPageKey(page)].afterRender === 'function') {
-                this.pages[this.getPageKey(page)].afterRender();
+            const pageKey = this.getPageKey(page);
+            if (this.pages[pageKey] && typeof this.pages[pageKey].afterRender === 'function') {
+                this.pages[pageKey].afterRender();
             }
             
             requestAnimationFrame(() => {
@@ -119,6 +134,7 @@ export class Router {
     getPageKey(page) {
         const pageKeyMap = {
             'login': 'auth',
+            'dashboard': 'dashboard',
             'iadl-monokem': 'iadl',
             'user-management': 'userManagement',
             'master-kpi': 'masterKPI',
@@ -132,7 +148,13 @@ export class Router {
             'approval-management': 'approvalManagement',
             'approval-history': 'approvalHistory',
             'management-review': 'managementReview',
-            'management-decision': 'managementDecision'
+            'management-decision': 'managementDecision',
+            'reports': 'reports',
+            'reports-hse': 'reportsHSE',
+            'executive-reports': 'executiveReports',
+            'monitoring': 'monitoring',
+            'monitoring-all': 'monitoringAll',
+            'monitoring-exec': 'monitoringExec'
         };
         return pageKeyMap[page] || 'placeholder';
     }
@@ -242,8 +264,9 @@ export class Router {
             const content = await this.renderPage(currentPage);
             mainContent.innerHTML = content;
             
-            if (this.pages[this.getPageKey(currentPage)] && typeof this.pages[this.getPageKey(currentPage)].afterRender === 'function') {
-                this.pages[this.getPageKey(currentPage)].afterRender();
+            const pageKey = this.getPageKey(currentPage);
+            if (this.pages[pageKey] && typeof this.pages[pageKey].afterRender === 'function') {
+                this.pages[pageKey].afterRender();
             }
             
             requestAnimationFrame(() => {
