@@ -281,7 +281,7 @@ code, pre {
 }
 
 .nav-item {
-    padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-lg);
+    padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
     cursor: pointer;
     transition: var(--transition);
     display: flex;
