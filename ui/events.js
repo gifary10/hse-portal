@@ -164,6 +164,7 @@ async function executeAction(action, params, element, formElement) {
     // Map action page names to router page keys
     const pageKeyMap = {
         'auth': 'auth',
+        'dashboard': 'dashboard',
         'iadl': 'iadl',
         'userManagement': 'userManagement',
         'masterKPI': 'masterKPI',
@@ -177,7 +178,13 @@ async function executeAction(action, params, element, formElement) {
         'approvalManagement': 'approvalManagement',
         'approvalHistory': 'approvalHistory',
         'managementReview': 'managementReview',
-        'managementDecision': 'managementDecision'
+        'managementDecision': 'managementDecision',
+        'reports': 'reports',
+        'reportsHSE': 'reportsHSE',
+        'executiveReports': 'executiveReports',
+        'monitoring': 'monitoring',
+        'monitoringAll': 'monitoringAll',
+        'monitoringExec': 'monitoringExec'
     };
     
     const pageKey = pageKeyMap[pageName] || pageName;
