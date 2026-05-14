@@ -18,6 +18,7 @@ import { ExecutiveReportsPage } from '../pages/executive-reports.js';
 import { MonitoringPage } from '../pages/monitoring.js';
 import { MonitoringAllPage } from '../pages/monitoring-all.js';
 import { MonitoringExecPage } from '../pages/monitoring-exec.js';
+import { closeModal } from '../ui/components.js';
 
 export class Router {
     constructor(state, db) {
@@ -77,6 +78,46 @@ export class Router {
         }
     }
 
+    /**
+     * Cek apakah ada modal yang masih terbuka
+     * @returns {Promise<boolean>} - True jika ada modal terbuka
+     */
+    async isModalOpen() {
+        const modalElement = document.getElementById('mainModal');
+        if (modalElement && modalElement.classList.contains('show')) {
+            return true;
+        }
+        // Cek juga backdrop Bootstrap
+        const backdrop = document.querySelector('.modal-backdrop');
+        return backdrop !== null;
+    }
+
+    /**
+     * Tutup semua modal yang mungkin terbuka sebelum navigasi
+     * @returns {Promise<void>}
+     */
+    async ensureModalsClosed() {
+        const modalElement = document.getElementById('mainModal');
+        if (modalElement && modalElement.classList.contains('show')) {
+            await closeModal();
+            // Beri waktu ekstra untuk animasi modal tertutup
+            await this.delay(150);
+        }
+        
+        // Hapus backdrop yang mungkin tertinggal
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => {
+            if (backdrop && backdrop.parentNode) {
+                backdrop.parentNode.removeChild(backdrop);
+            }
+        });
+        
+        // Hapus class modal-open dari body
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+    }
+
     async navigateTo(page, params = {}) {
         if (this.navigating) {
             console.warn('Navigation in progress, ignoring request to:', page);
@@ -85,13 +126,16 @@ export class Router {
         
         this.navigating = true;
         
+        // Cek apakah user masih login (kecuali menuju login page)
         if (!this.state.currentUser && page !== 'login') {
-            page = 'login';
+            this.navigating = false;
+            this.navigateTo('login');
+            return;
         }
 
         if (this.state.currentUser && page === 'login') {
-            this.navigateToDefaultPage();
             this.navigating = false;
+            this.navigateToDefaultPage();
             return;
         }
 
@@ -102,11 +146,18 @@ export class Router {
             return;
         }
         
+        // ============================================
+        // PENTING: Pastikan semua modal tertutup sebelum navigasi
+        // Ini mencegah masalah layar gelap setelah logout
+        // ============================================
+        await this.ensureModalsClosed();
+        
+        // Animasi fade out
         mainContent.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
         mainContent.style.opacity = '0';
         mainContent.style.transform = 'translateY(10px)';
         
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await this.delay(200);
         
         try {
             this.state.currentPage = page;
@@ -126,7 +177,10 @@ export class Router {
             });
             
             this.updateAfterNavigation();
+            
+            // Scroll ke atas dengan smooth
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            
             this.updateDocumentTitle(page);
             
         } catch (error) {
@@ -168,6 +222,7 @@ export class Router {
         const pageKey = this.getPageKey(page);
         
         if (this.pages[pageKey]) {
+            // Pass params ke method render
             return await this.pages[pageKey].render(page, params);
         }
         
@@ -278,5 +333,14 @@ export class Router {
         }
         
         this.updateAfterNavigation();
+    }
+
+    /**
+     * Utility delay function
+     * @param {number} ms - Milliseconds to delay
+     * @returns {Promise<void>}
+     */
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }

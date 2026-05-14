@@ -104,10 +104,36 @@ export class DatabaseService {
         }
     }
 
-    // Logout function
-    logout() {
+    /**
+     * Logout function - VERSI ASYNC DENGAN PROMISE
+     * Membersihkan session, cache, dan data user
+     * @returns {Promise<void>}
+     */
+    async logout() {
+        // Simpan user sebelum dihapus untuk log jika perlu
+        const oldUser = this.currentUser;
+        
+        // Step 1: Clear current user data
         this.currentUser = null;
         this.sessionId = null;
+        
+        // Step 2: Clear all caches
+        this.iadlCache = [];
+        this.userCache = [];
+        
+        // Step 3: Clear any pending requests (optional - untuk future implementation)
+        // Abort controller bisa ditambahkan di sini jika diperlukan
+        
+        // Step 4: Logging untuk debugging (hanya jika debug mode aktif)
+        const isDebugMode = CONFIG?.FEATURES?.DEBUG_MODE || false;
+        if (isDebugMode && oldUser) {
+            console.log(`✅ User "${oldUser.username}" logged out successfully at ${new Date().toISOString()}`);
+            console.log('Session cleaned, caches cleared');
+        }
+        
+        // Step 5: Return Promise resolved
+        // Memberikan kepastian bahwa cleanup sudah selesai
+        return Promise.resolve();
     }
 
     // Get all users for user management
@@ -132,5 +158,52 @@ export class DatabaseService {
 
     getIADLCache() {
         return this.iadlCache;
+    }
+    
+    /**
+     * Cek apakah user saat ini login
+     * @returns {boolean}
+     */
+    isLoggedIn() {
+        return this.currentUser !== null && this.sessionId !== null;
+    }
+    
+    /**
+     * Get current session ID
+     * @returns {string|null}
+     */
+    getSessionId() {
+        return this.sessionId;
+    }
+    
+    /**
+     * Get current user
+     * @returns {Object|null}
+     */
+    getCurrentUser() {
+        return this.currentUser;
+    }
+    
+    /**
+     * Clear specific cache by key
+     * @param {string} cacheKey - Nama cache yang akan dibersihkan
+     */
+    clearCache(cacheKey) {
+        if (cacheKey === 'iadl') {
+            this.iadlCache = [];
+        } else if (cacheKey === 'users') {
+            this.userCache = [];
+        } else {
+            console.warn(`Unknown cache key: ${cacheKey}`);
+        }
+    }
+    
+    /**
+     * Clear all caches
+     */
+    clearAllCaches() {
+        this.iadlCache = [];
+        this.userCache = [];
+        console.log('All caches cleared');
     }
 }

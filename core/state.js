@@ -5,6 +5,7 @@ export class AppState {
         this.sessionId = null;
         this.currentPage = 'monitoring';
         this.listeners = new Map();
+        this.isClearingUser = false; // Flag untuk mencegah multiple clear
     }
 
     setUser(user, sid) {
@@ -13,11 +14,168 @@ export class AppState {
         this.emit('userChanged', user);
     }
 
-    clearUser() {
-        this.currentUser = null;
-        this.sessionId = null;
-        sessionStorage.removeItem('currentPage');
-        this.emit('userChanged', null);
+    /**
+     * Clear user data - VERSI ASYNC DENGAN PROMISE
+     * Sekarang mengembalikan Promise agar pemanggil bisa menunggu
+     * sampai semua operasi cleanup selesai
+     * @returns {Promise<void>}
+     */
+    async clearUser() {
+        // Cegah multiple clear
+        if (this.isClearingUser) {
+            console.log('clearUser already in progress, ignoring...');
+            return;
+        }
+        
+        this.isClearingUser = true;
+        
+        try {
+            // Step 1: Hapus sessionStorage items yang berkaitan dengan user
+            this.clearUserSessionStorage();
+            
+            // Step 2: Hapus semua event listeners internal (opsional)
+            // Tidak perlu menghapus listeners, cukup clear data
+            
+            // Step 3: Simpan user lama untuk log jika diperlukan
+            const oldUser = this.currentUser;
+            
+            // Step 4: Reset state
+            this.currentUser = null;
+            this.sessionId = null;
+            
+            // Step 5: Emit event setelah state benar-benar bersih
+            this.emit('userChanged', null);
+            
+            // Step 6: Optional - log untuk debugging
+            if (oldUser && console && CONFIG?.FEATURES?.DEBUG_MODE) {
+                console.log(`User ${oldUser.username} logged out successfully`);
+            }
+            
+        } catch (error) {
+            console.error('Error during clearUser:', error);
+            // Tetap reset state meskipun error
+            this.currentUser = null;
+            this.sessionId = null;
+            this.emit('userChanged', null);
+        } finally {
+            this.isClearingUser = false;
+        }
+    }
+    
+    /**
+     * Hapus semua data sessionStorage yang terkait dengan user
+     * Mencegah data draft terbawa setelah logout
+     */
+    clearUserSessionStorage() {
+        // Daftar key yang harus dihapus saat logout
+        const keysToRemove = [
+            // OTP related
+            'selectedOTP',
+            'selectedOTPId',
+            'editOTPData',
+            'otpFormDraft',
+            
+            // Temuan related
+            'selectedTemuan',
+            'selectedTemuanId',
+            'temuanFormDraft',
+            
+            // Management Review related
+            'mrFormDraft',
+            'selectedMR',
+            
+            // Management Decision related
+            'mdFormDraft',
+            'selectedMD',
+            
+            // General
+            'currentPage',
+            'lastActivity'
+        ];
+        
+        for (const key of keysToRemove) {
+            try {
+                sessionStorage.removeItem(key);
+            } catch (e) {
+                console.warn(`Failed to remove sessionStorage key: ${key}`, e);
+            }
+        }
+        
+        // Optional: Clear all sessionStorage jika ingin lebih bersih
+        // TAPI hati-hati, bisa menghapus data yang diperlukan untuk navigasi
+        // Untuk keamanan, kita hanya hapus key yang sudah ditentukan
+    }
+    
+    /**
+     * Cek apakah user saat ini bisa logout
+     * Memeriksa apakah ada data draft yang belum disimpan
+     * @returns {boolean} - true jika aman untuk logout, false jika ada draft
+     */
+    canLogout() {
+        // Cek berbagai kemungkinan draft data di sessionStorage
+        const draftKeys = [
+            'editOTPData',
+            'selectedOTP',
+            'selectedTemuan',
+            'otpFormDraft',
+            'temuanFormDraft',
+            'mrFormDraft',
+            'mdFormDraft'
+        ];
+        
+        for (const key of draftKeys) {
+            const draft = sessionStorage.getItem(key);
+            if (draft && draft !== '{}' && draft !== 'null') {
+                try {
+                    const parsed = JSON.parse(draft);
+                    if (parsed && Object.keys(parsed).length > 0) {
+                        return false; // Ada draft, tidak aman untuk logout
+                    }
+                } catch (e) {
+                    // Jika tidak bisa di-parse tapi ada isinya, anggap ada draft
+                    if (draft && draft.length > 10) {
+                        return false;
+                    }
+                }
+            }
+        }
+        
+        return true; // Aman untuk logout
+    }
+    
+    /**
+     * Dapatkan daftar draft yang belum disimpan
+     * @returns {Array} - Array of draft info
+     */
+    getUnsavedDrafts() {
+        const drafts = [];
+        const draftKeys = [
+            { key: 'editOTPData', name: 'OTP yang sedang diedit' },
+            { key: 'selectedOTP', name: 'Data OTP sementara' },
+            { key: 'selectedTemuan', name: 'Data temuan sementara' },
+            { key: 'otpFormDraft', name: 'Draft OTP' },
+            { key: 'temuanFormDraft', name: 'Draft Temuan' },
+            { key: 'mrFormDraft', name: 'Draft Management Review' },
+            { key: 'mdFormDraft', name: 'Draft Management Decision' }
+        ];
+        
+        for (const { key, name } of draftKeys) {
+            const draft = sessionStorage.getItem(key);
+            if (draft && draft !== '{}' && draft !== 'null') {
+                try {
+                    const parsed = JSON.parse(draft);
+                    if (parsed && Object.keys(parsed).length > 0) {
+                        drafts.push(name);
+                    }
+                } catch (e) {
+                    if (draft && draft.length > 10) {
+                        drafts.push(name);
+                    }
+                }
+            }
+        }
+        
+        return drafts;
     }
 
     on(event, callback) {
@@ -26,10 +184,26 @@ export class AppState {
         }
         this.listeners.get(event).push(callback);
     }
+    
+    off(event, callback) {
+        const callbacks = this.listeners.get(event);
+        if (callbacks) {
+            const index = callbacks.indexOf(callback);
+            if (index !== -1) {
+                callbacks.splice(index, 1);
+            }
+        }
+    }
 
     emit(event, data) {
         const callbacks = this.listeners.get(event) || [];
-        callbacks.forEach(cb => cb(data));
+        callbacks.forEach(cb => {
+            try {
+                cb(data);
+            } catch (error) {
+                console.error(`Error in event listener for ${event}:`, error);
+            }
+        });
     }
 
     getRoleMenus() {
