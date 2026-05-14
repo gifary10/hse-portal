@@ -149,6 +149,7 @@ export class OTPReviewPage {
         const otp = this.otpData;
         const user = this.state.currentUser || {};
         const canReview = this.canUserReview();
+        const canEdit = this.canUserEdit();
         
         return `
             <div class="page-header">
@@ -160,12 +161,17 @@ export class OTPReviewPage {
                     <button class="btn btn-outline-primary" data-page="otp-history">
                         <i class="bi bi-arrow-left"></i> Back to List
                     </button>
+                    ${canEdit ? `
+                        <button class="btn btn-warning" id="editOtpBtn" data-action="otpReview.editOTP">
+                            <i class="bi bi-pencil-square"></i> Edit OTP
+                        </button>
+                    ` : ''}
                 </div>
             </div>
 
             <!-- OTP Status Banner -->
             <div class="app-card mb-md" style="background: ${this.getStatusBannerColor()}; border-left: 4px solid ${this.getStatusColor()};">
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <i class="bi ${this.getStatusIcon()}" style="font-size: 1.5rem; color: ${this.getStatusColor()};"></i>
                     <div>
                         <strong style="color: var(--text);">Status: ${this.getStatusBadge(otp.status)}</strong>
@@ -173,8 +179,48 @@ export class OTPReviewPage {
                             OTP ID: <code>${this.escapeHtml(otp.otpId || '-')}</code>
                         </span>
                     </div>
+                    ${otp.reviewedDate ? `
+                        <div style="margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted);">
+                            <i class="bi bi-clock"></i> Direview: ${this.formatDateTime(otp.reviewedDate)}
+                        </div>
+                    ` : ''}
                 </div>
             </div>
+
+            <!-- REVIEWER NOTES SECTION - DITAMPILKAN JIKA ADA -->
+            ${otp.reviewerNotes ? `
+                <div class="app-card mb-md" style="background: #fef9e7; border-left: 4px solid var(--warning);">
+                    <div class="card-header">
+                        <h3 class="card-title" style="color: var(--warning);">
+                            <i class="bi bi-chat-square-text"></i> Catatan Reviewer
+                        </h3>
+                        ${otp.reviewedBy ? `<span class="badge-status info">Oleh: ${this.escapeHtml(otp.reviewedBy)}</span>` : ''}
+                    </div>
+                    <div style="padding: var(--space-md);">
+                        <p style="margin: 0; white-space: pre-wrap; font-style: italic;">
+                            "${this.escapeHtml(otp.reviewerNotes)}"
+                        </p>
+                        ${otp.status === 'Revision Requested' ? `
+                            <div class="alert alert-warning mt-md" style="background: #fff3cd; padding: 12px; border-radius: var(--radius-md); margin-top: 12px;">
+                                <i class="bi bi-info-circle"></i> 
+                                <strong>Perlu Revisi!</strong> Silakan edit OTP ini sesuai catatan di atas, lalu submit ulang.
+                            </div>
+                        ` : ''}
+                        ${otp.status === 'Rejected' ? `
+                            <div class="alert alert-danger mt-md" style="background: #fee2e2; padding: 12px; border-radius: var(--radius-md); margin-top: 12px;">
+                                <i class="bi bi-x-circle"></i> 
+                                <strong>OTP Ditolak!</strong> Silakan buat OTP baru dengan perbaikan sesuai catatan.
+                            </div>
+                        ` : ''}
+                        ${otp.status === 'Approved' ? `
+                            <div class="alert alert-success mt-md" style="background: #dcfce7; padding: 12px; border-radius: var(--radius-md); margin-top: 12px;">
+                                <i class="bi bi-check-circle"></i> 
+                                <strong>OTP Disetujui!</strong> OTP ini telah disetujui dan akan dipantau progresnya.
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            ` : ''}
 
             <div class="row">
                 <!-- Left Column -->
@@ -335,8 +381,6 @@ export class OTPReviewPage {
                 <!-- Right Column - Actions -->
                 <div class="col-md-4">
                     ${canReview ? this.renderReviewActions() : this.renderStatusInfo()}
-                    
-                    ${otp.reviewerNotes ? this.renderReviewHistory() : ''}
                 </div>
             </div>
         `;
@@ -425,35 +469,8 @@ export class OTPReviewPage {
         `;
     }
 
-    renderReviewHistory() {
-        const otp = this.otpData;
-        return `
-            <div class="app-card mb-md" style="background: #fffbeb; border-left: 4px solid var(--warning);">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="bi bi-clock-history"></i> Review History</h3>
-                </div>
-                <div class="info-item mb-sm">
-                    <label class="info-label">Reviewer Notes</label>
-                    <div class="info-value" style="font-style: italic;">${this.escapeHtml(otp.reviewerNotes)}</div>
-                </div>
-                ${otp.reviewedBy ? `
-                <div class="info-item mb-sm">
-                    <label class="info-label">Reviewed By</label>
-                    <div class="info-value">${this.escapeHtml(otp.reviewedBy)}</div>
-                </div>
-                ` : ''}
-                ${otp.reviewedDate ? `
-                <div class="info-item mb-sm">
-                    <label class="info-label">Reviewed Date</label>
-                    <div class="info-value">${this.formatDateTime(otp.reviewedDate)}</div>
-                </div>
-                ` : ''}
-            </div>
-        `;
-    }
-
     // ============================================
-    // REVIEW ACTIONS - DIPERBAIKI
+    // REVIEW ACTIONS
     // ============================================
     
     canUserReview() {
@@ -466,6 +483,37 @@ export class OTPReviewPage {
         }
         
         return false;
+    }
+
+    canUserEdit() {
+        const user = this.state.currentUser;
+        const otp = this.otpData;
+        
+        if (!user || !otp) return false;
+        
+        // Hanya department user dan hanya jika status = Revision Requested
+        if (user.role === 'department' && otp.status === 'Revision Requested') {
+            // Optional: cek apakah OTP milik department user tersebut
+            if (otp.department === user.department) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    async editOTP(params, element) {
+        const otp = this.otpData;
+        if (!otp) {
+            toast('Data OTP tidak ditemukan', 'error');
+            return;
+        }
+        
+        // Simpan data OTP yang akan diedit ke sessionStorage
+        sessionStorage.setItem('editOTPData', JSON.stringify(otp));
+        
+        // Navigasi ke halaman create dengan mode edit
+        this.router.navigateTo('otp-create', { mode: 'edit', otpId: otp.otpId });
     }
 
     async approve(params, element) {
@@ -583,7 +631,6 @@ export class OTPReviewPage {
         }
         
         try {
-            // Gunakan POST method untuk menghindari URL length limit
             const url = new URL(webAppUrl);
             url.searchParams.append('action', 'updateOTPStatus');
             url.searchParams.append('otpId', otpId);
