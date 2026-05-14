@@ -3,7 +3,7 @@ export class AppState {
     constructor() {
         this.currentUser = null;
         this.sessionId = null;
-        this.currentPage = 'dashboard';
+        this.currentPage = 'monitoring';
         this.listeners = new Map();
     }
 
@@ -41,25 +41,12 @@ export class AppState {
         // DEFINISI SEMUA MENU
         // =============================================
         const allMenuSections = {
-            dashboard: {
-                section: 'Dashboard',
-                items: [
-                    { id: 'dashboard', label: 'Dashboard', icon: 'bi-speedometer2', page: 'dashboard' }
-                ]
-            },
             otpManagement: {
                 section: 'OTP Management',
                 items: [
                     { id: 'otp-create', label: 'Create OTP', icon: 'bi-pencil-square', page: 'otp-create' },
                     { id: 'otp-history', label: 'OTP History', icon: 'bi-clock-history', page: 'otp-history' },
                     { id: 'otp-review', label: 'Review OTP', icon: 'bi-search', page: 'otp-review' }
-                ]
-            },
-            approval: {
-                section: 'Approval',
-                items: [
-                    { id: 'approval-management', label: 'Approval Management', icon: 'bi-check-circle', page: 'approval-management' },
-                    { id: 'approval-history', label: 'Approval History', icon: 'bi-clock-history', page: 'approval-history' }
                 ]
             },
             monitoring: {
@@ -116,7 +103,6 @@ export class AppState {
         const roleAccess = {
             // DEPARTMENT
             department: [
-                'dashboard',
                 { section: 'otpManagement', items: ['otp-create', 'otp-history'] },
                 { section: 'monitoring', items: ['monitoring'] },
                 { section: 'temuan', items: ['temuan-daftar', 'temuan-tindak-lanjut'] },
@@ -126,21 +112,17 @@ export class AppState {
             
             // HSE
             hse: [
-                'dashboard',
-                'otpManagement',
-                'approval',
-                { section: 'monitoring', items: ['monitoring', 'monitoring-all'] },
+                { section: 'otpManagement', items: ['otp-history'] },
+                { section: 'monitoring', items: ['monitoring-all'] },
                 'temuan',
                 { section: 'masterData', items: ['master-template', 'iadl-monokem'] },
                 { section: 'managementReview', items: ['management-review'] },
-                { section: 'reports', items: ['reports', 'reports-hse'] },
+                { section: 'reports', items: ['reports-hse'] },
             ],
             
             // TOP MANAGEMENT
             top_management: [
-                'dashboard',
                 { section: 'otpManagement', items: ['otp-history', 'otp-review'] },
-                'approval',
                 { section: 'monitoring', items: ['monitoring-exec'] },
                 { section: 'temuan', items: ['temuan-daftar', 'temuan-tindak-lanjut'] },
                 { section: 'masterData', items: ['master-kpi', 'master-template'] },

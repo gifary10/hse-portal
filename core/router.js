@@ -1,7 +1,5 @@
 // core/router.js
 import { AuthPage } from '../pages/auth.js';
-import { PlaceholderPage } from '../pages/placeholder.js';
-import { DashboardPage } from '../pages/dashboard.js';
 import { IADLPage } from '../pages/iadl.js';
 import { UserManagementPage } from '../pages/user-management.js';
 import { MasterKPIPage } from '../pages/master-kpi.js';
@@ -12,8 +10,6 @@ import { OTPReviewPage } from '../pages/otp-review.js';
 import { TemuanInputPage } from '../pages/temuan-input.js';
 import { TemuanDaftarPage } from '../pages/temuan-daftar.js';
 import { TemuanTindakLanjutPage } from '../pages/temuan-tindak-lanjut.js';
-import { ApprovalManagementPage } from '../pages/approval-management.js';
-import { ApprovalHistoryPage } from '../pages/approval-history.js';
 import { ManagementReviewPage } from '../pages/management-review.js';
 import { ManagementDecisionPage } from '../pages/management-decision.js';
 import { ReportsPage } from '../pages/reports.js';
@@ -36,8 +32,6 @@ export class Router {
     initPages() {
         this.pages = {
             auth: new AuthPage(this.state, this.db, this),
-            placeholder: new PlaceholderPage(this.state, this.db, this),
-            dashboard: new DashboardPage(this.state, this.db, this),
             iadl: new IADLPage(this.state, this.db, this),
             userManagement: new UserManagementPage(this.state, this.db, this),
             masterKPI: new MasterKPIPage(this.state, this.db, this),
@@ -48,8 +42,6 @@ export class Router {
             temuanInput: new TemuanInputPage(this.state, this.db, this),
             temuanDaftar: new TemuanDaftarPage(this.state, this.db, this),
             temuanTindakLanjut: new TemuanTindakLanjutPage(this.state, this.db, this),
-            approvalManagement: new ApprovalManagementPage(this.state, this.db, this),
-            approvalHistory: new ApprovalHistoryPage(this.state, this.db, this),
             managementReview: new ManagementReviewPage(this.state, this.db, this),
             managementDecision: new ManagementDecisionPage(this.state, this.db, this),
             reports: new ReportsPage(this.state, this.db, this),
@@ -65,9 +57,23 @@ export class Router {
         const hasUser = this.state.currentUser !== null;
         
         if (hasUser) {
-            this.navigateTo('dashboard');
+            // Redirect ke monitoring page sesuai role setelah login
+            this.navigateToDefaultPage();
         } else {
             this.navigateTo('login');
+        }
+    }
+
+    navigateToDefaultPage() {
+        const user = this.state.currentUser;
+        const role = user?.role || 'department';
+        
+        if (role === 'top_management') {
+            this.navigateTo('monitoring-exec');
+        } else if (role === 'hse') {
+            this.navigateTo('monitoring-all');
+        } else {
+            this.navigateTo('monitoring');
         }
     }
 
@@ -84,7 +90,9 @@ export class Router {
         }
 
         if (this.state.currentUser && page === 'login') {
-            page = 'dashboard';
+            this.navigateToDefaultPage();
+            this.navigating = false;
+            return;
         }
 
         const mainContent = document.getElementById('mainContent');
@@ -134,7 +142,6 @@ export class Router {
     getPageKey(page) {
         const pageKeyMap = {
             'login': 'auth',
-            'dashboard': 'dashboard',
             'iadl-monokem': 'iadl',
             'user-management': 'userManagement',
             'master-kpi': 'masterKPI',
@@ -145,8 +152,6 @@ export class Router {
             'temuan-input': 'temuanInput',
             'temuan-daftar': 'temuanDaftar',
             'temuan-tindak-lanjut': 'temuanTindakLanjut',
-            'approval-management': 'approvalManagement',
-            'approval-history': 'approvalHistory',
             'management-review': 'managementReview',
             'management-decision': 'managementDecision',
             'reports': 'reports',
@@ -156,7 +161,7 @@ export class Router {
             'monitoring-all': 'monitoringAll',
             'monitoring-exec': 'monitoringExec'
         };
-        return pageKeyMap[page] || 'placeholder';
+        return pageKeyMap[page] || 'monitoring';
     }
 
     async renderPage(page, params = {}) {
@@ -166,9 +171,9 @@ export class Router {
             return await this.pages[pageKey].render(page, params);
         }
         
-        console.warn(`Halaman tidak dikenal: ${page}, redirect ke dashboard`);
-        this.state.currentPage = 'dashboard';
-        return this.pages.placeholder.render('dashboard');
+        console.warn(`Halaman tidak dikenal: ${page}, redirect ke monitoring`);
+        this.state.currentPage = 'monitoring';
+        return this.pages.monitoring.render('monitoring');
     }
 
     updateAfterNavigation() {
@@ -188,12 +193,9 @@ export class Router {
     updateDocumentTitle(page) {
         const titles = {
             'login': 'Login - EMS Monokem',
-            'dashboard': 'Dashboard - EMS Monokem',
             'otp-create': 'Create OTP - EMS Monokem',
             'otp-history': 'OTP History - EMS Monokem',
             'otp-review': 'Review OTP - EMS Monokem',
-            'approval-management': 'Approval Management - EMS Monokem',
-            'approval-history': 'Approval History - EMS Monokem',
             'monitoring': 'Progress Monitoring - EMS Monokem',
             'monitoring-all': 'All Monitoring - EMS Monokem',
             'monitoring-exec': 'Monitoring Overview - EMS Monokem',
@@ -216,9 +218,9 @@ export class Router {
 
     isValidPage(page) {
         const validPages = [
-            'login', 'dashboard', 'otp-create', 'otp-history', 'otp-review',
-            'approval-management', 'approval-history', 'monitoring', 'monitoring-all',
-            'monitoring-exec', 'temuan-input', 'temuan-daftar', 'temuan-tindak-lanjut',
+            'login', 'otp-create', 'otp-history', 'otp-review',
+            'monitoring', 'monitoring-all', 'monitoring-exec',
+            'temuan-input', 'temuan-daftar', 'temuan-tindak-lanjut',
             'master-kpi', 'master-template', 'iadl-monokem', 'management-review',
             'management-decision', 'reports', 'reports-hse', 'executive-reports',
             'user-management'
@@ -240,8 +242,8 @@ export class Router {
                     <i class="bi bi-exclamation-triangle" style="color: var(--danger);"></i>
                     <h2>${title || 'Terjadi Kesalahan'}</h2>
                     <p>${message || 'Silakan coba lagi atau hubungi administrator'}</p>
-                    <button class="btn btn-primary mt-md" data-action="navigate" data-params='{"page": "dashboard"}'>
-                        <i class="bi bi-house"></i> Kembali ke Dashboard
+                    <button class="btn btn-primary mt-md" data-page="monitoring">
+                        <i class="bi bi-house"></i> Kembali ke Monitoring
                     </button>
                 </div>
             </div>

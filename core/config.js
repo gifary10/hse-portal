@@ -4,7 +4,7 @@
 export const CONFIG = {
     // Google Sheets API Configuration
     GOOGLE_SHEETS: {
-        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxTIuo0bVu6tOUt6-cn6hE4rhgdm6QFKPB0zbkPy8roB45mNVI8AYAxY2jShf2P-1p0XA/exec',
+        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzGwoiNweiTu2Q7S4Rshd3-WwnjvM_gfAGqO346xFLCfvw_1oT7aRESU_GzN1vpHU_FxQ/exec',
         ENABLED: true,
         TIMEOUT: 30000
     },
