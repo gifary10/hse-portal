@@ -164,7 +164,6 @@ async function executeAction(action, params, element, formElement) {
     // Map action page names to router page keys
     const pageKeyMap = {
         'auth': 'auth',
-        'dashboard': 'dashboard',
         'iadl': 'iadl',
         'userManagement': 'userManagement',
         'masterKPI': 'masterKPI',
@@ -175,8 +174,6 @@ async function executeAction(action, params, element, formElement) {
         'temuanInput': 'temuanInput',
         'temuanDaftar': 'temuanDaftar',
         'temuanTindakLanjut': 'temuanTindakLanjut',
-        'approvalManagement': 'approvalManagement',
-        'approvalHistory': 'approvalHistory',
         'managementReview': 'managementReview',
         'managementDecision': 'managementDecision',
         'reports': 'reports',
