@@ -371,7 +371,7 @@ export class OTPReviewPage {
                     <div class="form-group-custom">
                         <label><i class="bi bi-chat-square-text"></i> Review Notes</label>
                         <textarea name="reviewerNotes" class="form-control" rows="4" 
-                                  placeholder="Masukkan catatan review (opsional)"></textarea>
+                                  placeholder="Masukkan catatan review (wajib untuk reject/request revision)"></textarea>
                     </div>
                     
                     <div class="d-flex gap-sm" style="flex-direction: column;">
@@ -453,7 +453,7 @@ export class OTPReviewPage {
     }
 
     // ============================================
-    // REVIEW ACTIONS
+    // REVIEW ACTIONS - DIPERBAIKI
     // ============================================
     
     canUserReview() {
@@ -469,7 +469,11 @@ export class OTPReviewPage {
     }
 
     async approve(params, element) {
-        await this.performReview('Approved', '');
+        const form = document.getElementById('otpReviewForm');
+        const formData = new FormData(form);
+        const notes = formData.get('reviewerNotes') || '';
+        
+        await this.performReview('Approved', notes);
     }
 
     async reject(params, element) {
@@ -478,8 +482,7 @@ export class OTPReviewPage {
         const notes = formData.get('reviewerNotes') || '';
         
         if (!notes) {
-            // Tampilkan modal konfirmasi reject tanpa notes
-            this.showRejectConfirmation('');
+            this.showRejectConfirmation();
             return;
         }
         
@@ -499,17 +502,17 @@ export class OTPReviewPage {
         await this.performReview('Revision Requested', notes);
     }
 
-    showRejectConfirmation(notes) {
+    showRejectConfirmation() {
         const content = `
             <div style="text-align: center;">
                 <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--danger);"></i>
                 <p class="mt-md">Apakah Anda yakin ingin <strong>menolak</strong> OTP ini?</p>
-                ${!notes ? '<p style="color: var(--warning); font-size: var(--fs-sm);">Disarankan untuk mengisi catatan alasan penolakan.</p>' : ''}
+                <p style="color: var(--warning); font-size: var(--fs-sm);">Disarankan untuk mengisi catatan alasan penolakan.</p>
                 <div class="d-flex justify-content-center gap-sm mt-lg">
                     <button class="btn btn-secondary" data-action="modal.close">
                         <i class="bi bi-x-circle"></i> Batal
                     </button>
-                    <button class="btn btn-danger" onclick="window._rejectOTP()">
+                    <button class="btn btn-danger" id="confirmRejectWithoutNotesBtn">
                         <i class="bi bi-check-circle"></i> Ya, Tolak
                     </button>
                 </div>
@@ -518,19 +521,24 @@ export class OTPReviewPage {
         
         showModal('Konfirmasi Penolakan', content);
         
-        window._rejectOTP = async () => {
+        document.getElementById('confirmRejectWithoutNotesBtn').addEventListener('click', async () => {
             closeModal();
-            const form = document.getElementById('otpReviewForm');
-            const formData = new FormData(form);
-            const finalNotes = formData.get('reviewerNotes') || 'Ditolak tanpa catatan';
-            await this.performReview('Rejected', finalNotes);
-            delete window._rejectOTP;
-        };
+            await this.performReview('Rejected', 'Ditolak tanpa catatan');
+        });
     }
 
     async performReview(status, notes) {
         const otp = this.otpData;
         const user = this.state.currentUser;
+        
+        // Tampilkan loading indicator
+        const approveBtn = document.querySelector('[data-action="otpReview.approve"]');
+        const rejectBtn = document.querySelector('[data-action="otpReview.reject"]');
+        const revisionBtn = document.querySelector('[data-action="otpReview.requestRevision"]');
+        
+        if (approveBtn) approveBtn.disabled = true;
+        if (rejectBtn) rejectBtn.disabled = true;
+        if (revisionBtn) revisionBtn.disabled = true;
         
         try {
             const result = await this.updateOTPStatus(otp.otpId, status, notes, user);
@@ -560,6 +568,10 @@ export class OTPReviewPage {
         } catch (error) {
             console.error('Review error:', error);
             toast('Gagal melakukan review: ' + error.message, 'error');
+        } finally {
+            if (approveBtn) approveBtn.disabled = false;
+            if (rejectBtn) rejectBtn.disabled = false;
+            if (revisionBtn) revisionBtn.disabled = false;
         }
     }
 
@@ -571,6 +583,7 @@ export class OTPReviewPage {
         }
         
         try {
+            // Gunakan POST method untuk menghindari URL length limit
             const url = new URL(webAppUrl);
             url.searchParams.append('action', 'updateOTPStatus');
             url.searchParams.append('otpId', otpId);
@@ -579,14 +592,30 @@ export class OTPReviewPage {
             url.searchParams.append('reviewedBy', user.username || user.name || '');
             url.searchParams.append('reviewedDate', new Date().toISOString());
             
+            console.log('Updating OTP status with params:', {
+                action: 'updateOTPStatus',
+                otpId: otpId,
+                status: status,
+                reviewerNotes: notes,
+                reviewedBy: user.username || user.name,
+                reviewedDate: new Date().toISOString()
+            });
+            
             const response = await fetch(url.toString(), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' }
             });
             
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Response error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
             
-            return await response.json();
+            const result = await response.json();
+            console.log('Update OTP status result:', result);
+            
+            return result;
             
         } catch (error) {
             console.error('Update OTP status error:', error);

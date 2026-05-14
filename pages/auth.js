@@ -75,7 +75,16 @@ export class AuthPage {
             if (result.success) {
                 this.state.setUser(result.user, result.sessionId);
                 toast('Login berhasil! Selamat datang, ' + result.user.name);
-                this.router.navigateTo('dashboard');
+                
+                // Redirect berdasarkan role
+                const role = result.user.role || 'department';
+                if (role === 'top_management') {
+                    this.router.navigateTo('monitoring-exec');
+                } else if (role === 'hse') {
+                    this.router.navigateTo('monitoring-all');
+                } else {
+                    this.router.navigateTo('monitoring');
+                }
                 
                 if (this.router.layout) {
                     this.router.layout.updateUserInfo();
