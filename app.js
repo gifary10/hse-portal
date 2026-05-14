@@ -94,6 +94,7 @@ class App {
     }
 }
 
+// Inisialisasi aplikasi setelah DOM siap
 document.addEventListener('DOMContentLoaded', () => {
     const app = new App();
     app.init();

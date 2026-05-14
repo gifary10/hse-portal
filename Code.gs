@@ -68,7 +68,7 @@ function handleRequest(e) {
         break;
       
       // ============================================
-      // OTP ACTIONS (Sheet: OTP)
+      // OTP ACTIONS (Sheet: OTP) - DIPERBAIKI
       // ============================================
       case 'saveOTP':
         const otpData = JSON.parse(e.parameter.data || '{}');
@@ -273,7 +273,6 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
     if (colIndex !== -1) {
       sheet.getRange(targetRow, colIndex + 1).setValue(value);
     }
-    // Jika kolom tidak ditemukan, skip (tidak membuat kolom baru otomatis)
   }
   
   return { status: 'success', message: 'Data berhasil diupdate.' };
@@ -323,7 +322,6 @@ function getPaginatedIADLData(page, pageSize, filters) {
 
 function getIADLHeaders() {
   const result = readSheetData('IADL');
-  // Ambil headers dari data pertama jika ada
   return { status: 'success', headers: [] };
 }
 
@@ -400,7 +398,7 @@ function getAllTemplateData() {
 }
 
 // ============================================
-// OTP FUNCTIONS (Sheet: OTP)
+// OTP FUNCTIONS (Sheet: OTP) - DIPERBAIKI
 // ============================================
 
 function saveOTPData(data) {
@@ -432,12 +430,12 @@ function saveOTPData(data) {
     data.owner || '',
     data.budget || '',
     data.weight || '',
-    data.status || 'Draft',
+    data.status || 'Submitted',
     data.createdAt || new Date().toISOString(),
     data.createdBy || '',
-    '',
-    '',
-    ''
+    '', // reviewer_notes
+    '', // reviewed_by
+    ''  // reviewed_date
   ];
   
   const result = appendRowToSheet('OTP', rowData);
@@ -462,35 +460,138 @@ function getOTPByDepartment(department) {
   if (!department) return allData;
   
   const filteredData = allData.data.filter(item => 
-    item.Department === department || item.department === department
+    (item.Department === department || item.department === department)
   );
   
   return { status: 'success', data: filteredData, total: filteredData.length };
 }
 
 function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate) {
-  const updates = {};
-  
-  updates[['Status', 'status']] = status;
-  if (reviewerNotes) updates[['Reviewer_Notes', 'reviewerNotes', 'reviewer_notes']] = reviewerNotes;
-  if (reviewedBy) updates[['Reviewed_By', 'reviewedBy', 'reviewed_by']] = reviewedBy;
-  if (reviewedDate) updates[['Reviewed_Date', 'reviewedDate', 'reviewed_date']] = reviewedDate;
-  
-  const result = findAndUpdateRow(
-    'OTP',
-    ['OTP_ID', 'otpId', 'otp_id'],
-    otpId,
-    updates
-  );
-  
-  if (result.status === 'error') return result;
-  
-  return { 
-    status: 'success', 
-    message: 'Status OTP berhasil diupdate menjadi ' + status,
-    otpId: otpId,
-    newStatus: status
-  };
+  try {
+    const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+    const sheet = spreadsheet.getSheetByName('OTP');
+    
+    if (!sheet) {
+      return { status: 'error', message: 'Sheet OTP tidak ditemukan' };
+    }
+    
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    
+    if (lastRow < 2) {
+      return { status: 'error', message: 'Tidak ada data OTP' };
+    }
+    
+    // Ambil headers dari baris pertama
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    // Cari kolom-kolom yang diperlukan
+    let idColIndex = -1;
+    let statusColIndex = -1;
+    let reviewerNotesColIndex = -1;
+    let reviewedByColIndex = -1;
+    let reviewedDateColIndex = -1;
+    
+    for (let i = 0; i < headers.length; i++) {
+      const header = String(headers[i]).toUpperCase();
+      const headerOriginal = headers[i];
+      
+      if (header === 'OTP_ID' || headerOriginal === 'OTP_ID' || headerOriginal === 'otpId') {
+        idColIndex = i;
+      }
+      if (header === 'STATUS' || headerOriginal === 'Status' || headerOriginal === 'status') {
+        statusColIndex = i;
+      }
+      if (header === 'REVIEWER_NOTES' || headerOriginal === 'Reviewer_Notes' || headerOriginal === 'reviewerNotes' || headerOriginal === 'ReviewerNotes') {
+        reviewerNotesColIndex = i;
+      }
+      if (header === 'REVIEWED_BY' || headerOriginal === 'Reviewed_By' || headerOriginal === 'reviewedBy' || headerOriginal === 'ReviewedBy') {
+        reviewedByColIndex = i;
+      }
+      if (header === 'REVIEWED_DATE' || headerOriginal === 'Reviewed_Date' || headerOriginal === 'reviewedDate' || headerOriginal === 'ReviewedDate') {
+        reviewedDateColIndex = i;
+      }
+    }
+    
+    // Debug log
+    console.log('Headers ditemukan:', {
+      idColIndex: idColIndex,
+      statusColIndex: statusColIndex,
+      reviewerNotesColIndex: reviewerNotesColIndex,
+      reviewedByColIndex: reviewedByColIndex,
+      reviewedDateColIndex: reviewedDateColIndex
+    });
+    
+    if (idColIndex === -1) {
+      return { status: 'error', message: 'Kolom OTP_ID tidak ditemukan di sheet OTP' };
+    }
+    
+    if (statusColIndex === -1) {
+      // Buat kolom status jika belum ada
+      const newColIndex = lastCol + 1;
+      sheet.getRange(1, newColIndex).setValue('Status');
+      statusColIndex = newColIndex - 1;
+    }
+    
+    // Cari baris yang mengandung OTP_ID
+    const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+    const values = dataRange.getValues();
+    
+    let targetRow = -1;
+    for (let i = 0; i < values.length; i++) {
+      const cellValue = values[i][idColIndex];
+      if (cellValue && String(cellValue).trim() === String(otpId).trim()) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+    
+    if (targetRow === -1) {
+      return { status: 'error', message: `OTP dengan ID "${otpId}" tidak ditemukan` };
+    }
+    
+    // Update status
+    sheet.getRange(targetRow, statusColIndex + 1).setValue(status);
+    
+    // Update reviewer notes
+    if (reviewerNotesColIndex !== -1 && reviewerNotes) {
+      sheet.getRange(targetRow, reviewerNotesColIndex + 1).setValue(reviewerNotes);
+    } else if (reviewerNotes && reviewerNotesColIndex === -1) {
+      // Buat kolom reviewer notes jika belum ada
+      const newColIndex = lastCol + 1;
+      sheet.getRange(1, newColIndex).setValue('Reviewer_Notes');
+      sheet.getRange(targetRow, newColIndex).setValue(reviewerNotes);
+    }
+    
+    // Update reviewed by
+    if (reviewedByColIndex !== -1 && reviewedBy) {
+      sheet.getRange(targetRow, reviewedByColIndex + 1).setValue(reviewedBy);
+    } else if (reviewedBy && reviewedByColIndex === -1) {
+      const newColIndex = lastCol + 1;
+      sheet.getRange(1, newColIndex).setValue('Reviewed_By');
+      sheet.getRange(targetRow, newColIndex).setValue(reviewedBy);
+    }
+    
+    // Update reviewed date
+    if (reviewedDateColIndex !== -1 && reviewedDate) {
+      sheet.getRange(targetRow, reviewedDateColIndex + 1).setValue(reviewedDate);
+    } else if (reviewedDate && reviewedDateColIndex === -1) {
+      const newColIndex = lastCol + 1;
+      sheet.getRange(1, newColIndex).setValue('Reviewed_Date');
+      sheet.getRange(targetRow, newColIndex).setValue(reviewedDate);
+    }
+    
+    return { 
+      status: 'success', 
+      message: 'Status OTP berhasil diupdate menjadi ' + status,
+      otpId: otpId,
+      newStatus: status
+    };
+    
+  } catch (error) {
+    console.error('Error in updateOTPStatus:', error);
+    return { status: 'error', message: error.toString() };
+  }
 }
 
 // ============================================
@@ -527,13 +628,13 @@ function saveTemuanData(data) {
     data.createdAt || new Date().toISOString(),
     data.createdBy || '',
     data.auditorDept || '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
+    '', // tindakan_perbaikan
+    '', // tindakan_pencegahan
+    '', // tgl_selesai
+    '', // hasil_verifikasi
+    '', // verifikator
+    '', // tgl_verifikasi
+    '', // catatan_tl
     data.createdBy || '',
     data.createdAt || new Date().toISOString()
   ];
