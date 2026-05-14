@@ -124,33 +124,20 @@ async function executeAction(action, params, element, formElement) {
     // Handle logout
     if (action === 'auth.logout') {
         if (appInstance.router.pages.auth) {
-            appInstance.router.pages.auth.logout();
+            await appInstance.router.pages.auth.logout();
         }
         return;
     }
     
-    // Handle confirm modal actions
-    if (action === 'confirmModal.confirm') {
-        closeModal();
-        if (window._confirmModalCallback && typeof window._confirmModalCallback.onConfirm === 'function') {
-            window._confirmModalCallback.onConfirm();
-        }
-        return;
-    }
-
-    if (action === 'confirmModal.cancel') {
-        closeModal();
-        if (window._confirmModalCallback && typeof window._confirmModalCallback.onCancel === 'function') {
-            window._confirmModalCallback.onCancel();
-        }
-        return;
-    }
-    
-    // Handle modal close
-    if (action === 'modal.close') {
-        closeModal();
-        return;
-    }
+    // ============================================
+    // CONFIRM MODAL ACTIONS - TIDAK DIPERLUKAN LAGI
+    // Karena confirmModal sudah menggunakan Promise,
+    // handler ini dihapus untuk menghindari konflik.
+    // Modal akan ditutup oleh mekanisme Promise di components.js
+    // ============================================
+    // Catatan: action 'confirmModal.confirm' dan 'confirmModal.cancel'
+    // sudah tidak digunakan lagi. Jika ada tombol dengan action tersebut,
+    // mereka tidak akan berfungsi. Sebaiknya hapus tombol tersebut dari HTML.
     
     // Parse action string: "pageName.methodName"
     const parts = action.split('.');

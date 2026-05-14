@@ -78,39 +78,129 @@ export function showModal(title, content, size = '') {
     modalElement._bsModal = bsModal;
 }
 
-export function confirmModal(title, message, onConfirm, onCancel) {
-    const content = `
-        <div class="text-center">
-            <i class="bi bi-question-circle" style="font-size: 3rem; color: var(--warning);"></i>
-            <p class="mt-md" style="font-size: var(--fs-md);">${message}</p>
-            <div class="d-flex justify-content-center gap-sm mt-lg">
-                <button class="btn btn-secondary" data-action="confirmModal.cancel">
-                    <i class="bi bi-x-circle"></i> Tidak
-                </button>
-                <button class="btn btn-danger" data-action="confirmModal.confirm">
-                    <i class="bi bi-check-circle"></i> Ya
-                </button>
+/**
+ * Menampilkan modal konfirmasi dengan Promise
+ * @param {string} title - Judul modal
+ * @param {string} message - Pesan konfirmasi
+ * @param {Object} options - Opsi tambahan
+ * @param {string} options.confirmText - Teks tombol konfirmasi (default: 'Ya')
+ * @param {string} options.cancelText - Teks tombol batal (default: 'Tidak')
+ * @param {string} options.confirmClass - Class tombol konfirmasi (default: 'btn-danger')
+ * @param {boolean} options.dangerMode - Jika true, tombol konfirmasi berwarna merah
+ * @returns {Promise<boolean>} - Promise yang resolve dengan true jika confirm, false jika cancel
+ */
+export function confirmModal(title, message, options = {}) {
+    const {
+        confirmText = 'Ya',
+        cancelText = 'Tidak',
+        confirmClass = 'btn-danger',
+        dangerMode = true
+    } = options;
+    
+    return new Promise((resolve) => {
+        const content = `
+            <div class="text-center">
+                <i class="bi bi-question-circle" style="font-size: 3rem; color: var(--warning);"></i>
+                <p class="mt-md" style="font-size: var(--fs-md);">${message}</p>
+                <div class="d-flex justify-content-center gap-sm mt-lg">
+                    <button class="btn btn-secondary" id="confirmModalCancelBtn">
+                        <i class="bi bi-x-circle"></i> ${cancelText}
+                    </button>
+                    <button class="btn ${confirmClass}" id="confirmModalConfirmBtn">
+                        <i class="bi ${dangerMode ? 'bi-exclamation-triangle' : 'bi-check-circle'}"></i> ${confirmText}
+                    </button>
+                </div>
             </div>
-        </div>
-    `;
-
-    showModal(title, content);
-
-    window._confirmModalCallback = { onConfirm, onCancel };
-
-    const modalElement = document.getElementById('mainModal');
-    if (modalElement) {
+        `;
+        
+        showModal(title, content);
+        
+        const modalElement = document.getElementById('mainModal');
+        const confirmBtn = document.getElementById('confirmModalConfirmBtn');
+        const cancelBtn = document.getElementById('confirmModalCancelBtn');
+        
+        let resolved = false;
+        
         const cleanup = () => {
-            delete window._confirmModalCallback;
-            modalElement.removeEventListener('hidden.bs.modal', cleanup);
+            if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+            if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+            if (modalElement) {
+                modalElement.removeEventListener('hidden.bs.modal', onHidden);
+            }
         };
-        modalElement.addEventListener('hidden.bs.modal', cleanup);
-    }
+        
+        const onConfirm = () => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            
+            // Tutup modal dengan animasi
+            if (modalElement && modalElement._bsModal) {
+                modalElement._bsModal.hide();
+            }
+            
+            // Tunggu modal benar-benar tertutup sebelum resolve
+            const checkHidden = () => {
+                if (!modalElement || !modalElement.classList.contains('show')) {
+                    resolve(true);
+                } else {
+                    setTimeout(checkHidden, 50);
+                }
+            };
+            setTimeout(checkHidden, 150);
+        };
+        
+        const onCancel = () => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            
+            if (modalElement && modalElement._bsModal) {
+                modalElement._bsModal.hide();
+            }
+            
+            const checkHidden = () => {
+                if (!modalElement || !modalElement.classList.contains('show')) {
+                    resolve(false);
+                } else {
+                    setTimeout(checkHidden, 50);
+                }
+            };
+            setTimeout(checkHidden, 150);
+        };
+        
+        const onHidden = () => {
+            if (!resolved) {
+                resolved = true;
+                cleanup();
+                resolve(false);
+            }
+        };
+        
+        if (confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+        if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+        if (modalElement) modalElement.addEventListener('hidden.bs.modal', onHidden);
+    });
 }
 
+/**
+ * Menutup modal yang sedang terbuka
+ * @returns {Promise<void>} - Promise yang resolve setelah modal tertutup
+ */
 export function closeModal() {
-    const modalElement = document.getElementById('mainModal');
-    if (modalElement && modalElement._bsModal) {
-        modalElement._bsModal.hide();
-    }
+    return new Promise((resolve) => {
+        const modalElement = document.getElementById('mainModal');
+        if (modalElement && modalElement._bsModal) {
+            const checkHidden = () => {
+                if (!modalElement.classList.contains('show')) {
+                    modalElement.removeEventListener('hidden.bs.modal', checkHidden);
+                    resolve();
+                }
+            };
+            modalElement.addEventListener('hidden.bs.modal', checkHidden);
+            modalElement._bsModal.hide();
+        } else {
+            resolve();
+        }
+    });
 }

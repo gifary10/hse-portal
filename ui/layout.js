@@ -4,6 +4,7 @@ export class Layout {
         this.state = state;
         this.router = router;
         router.layout = this;
+        this.isUpdatingSidebar = false; // Flag untuk mencegah multiple update
     }
 
     init() {
@@ -99,10 +100,23 @@ export class Layout {
         }
     }
 
+    /**
+     * Update sidebar dengan animasi yang halus
+     * Mencegah sidebar kosong tiba-tiba (blink)
+     */
     updateSidebar() {
+        if (this.isUpdatingSidebar) return;
+        this.isUpdatingSidebar = true;
+        
         const nav = document.getElementById('sidebarNav');
         if (!this.state.currentUser) {
-            if (nav) nav.innerHTML = '';
+            if (nav) {
+                this.fadeOutElement(nav, () => {
+                    nav.innerHTML = '';
+                    this.fadeInElement(nav);
+                });
+            }
+            this.isUpdatingSidebar = false;
             return;
         }
         
@@ -131,27 +145,118 @@ export class Layout {
                 Logout
             </div>`;
         
-        if (nav) nav.innerHTML = html;
+        if (nav) {
+            // Gunakan fade transition untuk menghindari blink
+            this.fadeOutElement(nav, () => {
+                nav.innerHTML = html;
+                this.fadeInElement(nav);
+                this.isUpdatingSidebar = false;
+            });
+        } else {
+            this.isUpdatingSidebar = false;
+        }
+    }
+    
+    /**
+     * Fade out elemen dengan transisi
+     * @param {HTMLElement} element - Elemen yang akan difade out
+     * @param {Function} callback - Callback setelah fade out selesai
+     */
+    fadeOutElement(element, callback) {
+        if (!element) {
+            if (callback) callback();
+            return;
+        }
+        
+        // Simpan transisi asli
+        const originalTransition = element.style.transition;
+        element.style.transition = 'opacity 0.15s ease';
+        element.style.opacity = '0';
+        
+        setTimeout(() => {
+            element.style.transition = originalTransition;
+            if (callback) callback();
+        }, 150);
+    }
+    
+    /**
+     * Fade in elemen dengan transisi
+     * @param {HTMLElement} element - Elemen yang akan difade in
+     */
+    fadeInElement(element) {
+        if (!element) return;
+        
+        const originalTransition = element.style.transition;
+        element.style.transition = 'opacity 0.15s ease';
+        element.style.opacity = '1';
+        
+        setTimeout(() => {
+            element.style.transition = originalTransition;
+        }, 150);
+    }
+    
+    /**
+     * Tampilkan loading state pada sidebar (saat logout)
+     * @param {boolean} isLoading - True untuk tampilkan loading, false untuk normal
+     */
+    setSidebarLoading(isLoading) {
+        const logoutBtn = document.querySelector('.nav-item[data-action="auth.logout"]');
+        if (!logoutBtn) return;
+        
+        if (isLoading) {
+            const icon = logoutBtn.querySelector('.icon i');
+            if (icon) {
+                // Simpan kelas icon asli
+                if (!logoutBtn.dataset.originalIcon) {
+                    logoutBtn.dataset.originalIcon = icon.className;
+                }
+                icon.className = 'bi bi-hourglass-split spinner-border spinner-border-sm';
+                icon.style.animationDuration = '0.6s';
+            }
+            logoutBtn.style.opacity = '0.7';
+            logoutBtn.style.pointerEvents = 'none';
+        } else {
+            const icon = logoutBtn.querySelector('.icon i');
+            if (icon && logoutBtn.dataset.originalIcon) {
+                icon.className = logoutBtn.dataset.originalIcon;
+                delete logoutBtn.dataset.originalIcon;
+                icon.style.animationDuration = '';
+            }
+            logoutBtn.style.opacity = '';
+            logoutBtn.style.pointerEvents = '';
+        }
     }
 
     attachSidebarEvents() {
         const nav = document.getElementById('sidebarNav');
         if (!nav) return;
         
-        nav.addEventListener('click', (e) => {
+        // Gunakan event delegation dengan throttle untuk performa
+        let isProcessing = false;
+        
+        nav.addEventListener('click', async (e) => {
+            if (isProcessing) return;
+            
             const navItem = e.target.closest('.nav-item');
             if (!navItem) return;
             
+            // Cegah klik jika sedang loading
+            if (navItem.style.pointerEvents === 'none') return;
+            
             if (navItem.dataset.action === 'auth.logout') {
+                isProcessing = true;
                 if (this.router.pages.auth) {
-                    this.router.pages.auth.logout();
+                    await this.router.pages.auth.logout();
                 }
+                isProcessing = false;
                 return;
             }
             
             const page = navItem.dataset.page;
             if (page) {
-                this.router.navigateTo(page);
+                isProcessing = true;
+                await this.router.navigateTo(page);
+                isProcessing = false;
             }
         });
         
@@ -164,5 +269,19 @@ export class Layout {
                 }
             }
         });
+    }
+    
+    /**
+     * Reset sidebar ke keadaan awal (kosong)
+     * Digunakan saat logout untuk membersihkan menu
+     */
+    resetSidebar() {
+        const nav = document.getElementById('sidebarNav');
+        if (nav) {
+            this.fadeOutElement(nav, () => {
+                nav.innerHTML = '';
+                this.fadeInElement(nav);
+            });
+        }
     }
 }
