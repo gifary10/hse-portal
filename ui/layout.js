@@ -1,10 +1,9 @@
-// ui/layout.js
 export class Layout {
     constructor(state, router) {
         this.state = state;
         this.router = router;
         router.layout = this;
-        this.isUpdatingSidebar = false; // Flag untuk mencegah multiple update
+        this.isUpdatingSidebar = false;
     }
 
     init() {
@@ -100,10 +99,6 @@ export class Layout {
         }
     }
 
-    /**
-     * Update sidebar dengan animasi yang halus
-     * Mencegah sidebar kosong tiba-tiba (blink)
-     */
     updateSidebar() {
         if (this.isUpdatingSidebar) return;
         this.isUpdatingSidebar = true;
@@ -146,8 +141,7 @@ export class Layout {
             </div>`;
         
         if (nav) {
-            // Gunakan fade transition untuk menghindari blink
-            this.fadeOutElement(nav, () => {
+             this.fadeOutElement(nav, () => {
                 nav.innerHTML = html;
                 this.fadeInElement(nav);
                 this.isUpdatingSidebar = false;
@@ -271,11 +265,7 @@ export class Layout {
         });
     }
     
-    /**
-     * Reset sidebar ke keadaan awal (kosong)
-     * Digunakan saat logout untuk membersihkan menu
-     */
-    resetSidebar() {
+     resetSidebar() {
         const nav = document.getElementById('sidebarNav');
         if (nav) {
             this.fadeOutElement(nav, () => {

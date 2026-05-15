@@ -86,15 +86,13 @@ export function showModal(title, content, size = '') {
  * @param {string} options.confirmText - Teks tombol konfirmasi (default: 'Ya')
  * @param {string} options.cancelText - Teks tombol batal (default: 'Tidak')
  * @param {string} options.confirmClass - Class tombol konfirmasi (default: 'btn-danger')
- * @param {boolean} options.dangerMode - Jika true, tombol konfirmasi berwarna merah
  * @returns {Promise<boolean>} - Promise yang resolve dengan true jika confirm, false jika cancel
  */
 export function confirmModal(title, message, options = {}) {
     const {
         confirmText = 'Ya',
         cancelText = 'Tidak',
-        confirmClass = 'btn-danger',
-        dangerMode = true
+        confirmClass = 'btn-danger'
     } = options;
     
     return new Promise((resolve) => {
@@ -107,7 +105,7 @@ export function confirmModal(title, message, options = {}) {
                         <i class="bi bi-x-circle"></i> ${cancelText}
                     </button>
                     <button class="btn ${confirmClass}" id="confirmModalConfirmBtn">
-                        <i class="bi ${dangerMode ? 'bi-exclamation-triangle' : 'bi-check-circle'}"></i> ${confirmText}
+                        <i class="bi bi-exclamation-triangle"></i> ${confirmText}
                     </button>
                 </div>
             </div>
@@ -134,12 +132,10 @@ export function confirmModal(title, message, options = {}) {
             resolved = true;
             cleanup();
             
-            // Tutup modal dengan animasi
             if (modalElement && modalElement._bsModal) {
                 modalElement._bsModal.hide();
             }
             
-            // Tunggu modal benar-benar tertutup sebelum resolve
             const checkHidden = () => {
                 if (!modalElement || !modalElement.classList.contains('show')) {
                     resolve(true);
