@@ -1,7 +1,3 @@
-// pages/temuan-input.js
-// Input Temuan Audit Internal Page
-// Form untuk menginput temuan audit internal
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -12,10 +8,7 @@ export class TemuanInputPage {
         this.router = router;
         this.isLoading = false;
         this.isSubmitting = false;
-        
-        // Data referensi
-        this.kpiList = [];
-        this.templateList = [];
+
         this.iadlList = [];
     }
 
@@ -53,14 +46,8 @@ export class TemuanInputPage {
 
     async loadReferenceData() {
         try {
-            const [kpiResult, templateResult, iadlResult] = await Promise.all([
-                this.fetchReferenceData('getAllKPI'),
-                this.fetchReferenceData('getAllTemplates'),
-                this.fetchReferenceData('getAll')
-            ]);
-            
-            this.kpiList = kpiResult.data || [];
-            this.templateList = templateResult.data || [];
+            // Hanya ambil IADL untuk mendapatkan daftar departemen
+            const iadlResult = await this.fetchReferenceData('getAll');
             this.iadlList = iadlResult.data || [];
             
         } catch (error) {
@@ -307,11 +294,6 @@ export class TemuanInputPage {
         this.iadlList.forEach(item => {
             if (item.Departemen || item.departemen) {
                 departments.add(item.Departemen || item.departemen);
-            }
-        });
-        this.kpiList.forEach(item => {
-            if (item.Department || item.department) {
-                departments.add(item.Department || item.department);
             }
         });
         return Array.from(departments).sort();

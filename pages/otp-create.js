@@ -1,7 +1,3 @@
-// pages/otp-create.js
-// OTP Create/Edit Page - Input OTP dengan referensi dari MasterKPI, MasterTemplate, dan IADL
-// Mendukung mode: create (default) dan edit (untuk revision requested)
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -15,22 +11,11 @@ export class OTPCreatePage {
         this.isEditMode = false;
         this.editOtpId = null;
         this.editOtpData = null;
-        
-        // Data referensi dari master
         this.kpiList = [];
         this.templateList = [];
         this.iadlList = [];
-        
-        // Selected values
-        this.selectedTemplate = null;
-        this.selectedKPI = null;
-        this.selectedIADL = null;
     }
 
-    // ============================================
-    // FETCH REFERENCE DATA
-    // ============================================
-    
     async fetchReferenceData(action) {
         const webAppUrl = getWebAppUrl();
         
@@ -66,7 +51,6 @@ export class OTPCreatePage {
 
     async loadReferenceData() {
         try {
-            // Fetch KPI, Template, dan IADL secara paralel
             const [kpiResult, templateResult, iadlResult] = await Promise.all([
                 this.fetchReferenceData('getAllKPI'),
                 this.fetchReferenceData('getAllTemplates'),
@@ -88,26 +72,20 @@ export class OTPCreatePage {
             throw error;
         }
     }
-
-    // ============================================
-    // LOAD EDIT DATA
-    // ============================================
     
     async loadEditData(otpId) {
-        // Coba ambil dari sessionStorage terlebih dahulu
         const cachedEditData = sessionStorage.getItem('editOTPData');
         if (cachedEditData) {
             try {
                 const parsed = JSON.parse(cachedEditData);
                 if (parsed.otpId === otpId) {
                     this.editOtpData = parsed;
-                    sessionStorage.removeItem('editOTPData'); // Clear after use
+                    sessionStorage.removeItem('editOTPData');
                     return;
                 }
             } catch (e) {}
         }
         
-        // Jika tidak ada di cache, fetch dari Google Sheets
         const webAppUrl = getWebAppUrl();
         
         if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
@@ -185,13 +163,8 @@ export class OTPCreatePage {
         result._rowIndex = item.rowIndex || null;
         return result;
     }
-
-    // ============================================
-    // RENDER
-    // ============================================
     
     async render(page, params = {}) {
-        // Cek mode edit dari params
         this.isEditMode = params.mode === 'edit' || 
                           new URLSearchParams(window.location.search).get('mode') === 'edit';
         this.editOtpId = params.otpId || new URLSearchParams(window.location.search).get('otpId');
@@ -219,7 +192,6 @@ export class OTPCreatePage {
         const userDept = user.department || '';
         const isEdit = this.isEditMode && this.editOtpData;
         
-        // Filter data berdasarkan departemen user
         const filteredKPIs = this.kpiList.filter(k => 
             !userDept || (k.Department || k.department) === userDept
         );
@@ -230,10 +202,8 @@ export class OTPCreatePage {
             !userDept || (i.Departemen || i.departemen) === userDept
         );
         
-        // Jika mode edit, set nilai default dari data yang akan diedit
         const editData = isEdit ? this.editOtpData : null;
         
-        // Helper untuk mendapatkan nilai edit atau default
         const getEditValue = (field, defaultValue = '') => {
             if (isEdit && editData && editData[field]) {
                 return this.escapeHtml(editData[field]);
@@ -561,12 +531,8 @@ export class OTPCreatePage {
         `;
     }
 
-    // ============================================
-    // EVENT HANDLERS (SETUP AFTER RENDER)
-    // ============================================
-    
+  
     setupEventListeners() {
-        // Template Select Change
         const templateSelect = document.getElementById('otpTemplateSelect');
         if (templateSelect) {
             templateSelect.addEventListener('change', (e) => {
@@ -582,7 +548,6 @@ export class OTPCreatePage {
                     objectiveField.value = objective;
                 }
                 
-                // Auto-select KPI if matches
                 const kpiSelect = document.getElementById('otpKPISelect');
                 if (kpiSelect && kpiCode) {
                     for (let i = 0; i < kpiSelect.options.length; i++) {
@@ -596,7 +561,6 @@ export class OTPCreatePage {
             });
         }
         
-        // KPI Select Change
         const kpiSelect = document.getElementById('otpKPISelect');
         if (kpiSelect) {
             kpiSelect.addEventListener('change', (e) => {
@@ -608,7 +572,6 @@ export class OTPCreatePage {
             });
         }
         
-        // Program Select Change
         const programSelect = document.getElementById('otpProgramSelect');
         if (programSelect) {
             programSelect.addEventListener('change', (e) => {
@@ -620,14 +583,10 @@ export class OTPCreatePage {
         }
     }
 
-    // ============================================
-    // SUBMIT ACTIONS
-    // ============================================
-    
+   
     async submit(params, element) {
         if (this.isSubmitting) return;
         
-        // Ambil form dari DOM
         const form = document.getElementById('otpCreateForm');
         if (!form) {
             toast('Form tidak ditemukan', 'error');
@@ -640,7 +599,6 @@ export class OTPCreatePage {
             data[key] = value;
         });
         
-        // Validasi
         if (!data.templateCode || !data.kpiCode || !data.programCode) {
             toast('Mohon lengkapi semua field yang wajib diisi', 'error');
             return;
@@ -651,7 +609,6 @@ export class OTPCreatePage {
             return;
         }
         
-        // Validasi weight
         const weight = parseFloat(data.weight);
         if (isNaN(weight) || weight < 0 || weight > 100) {
             toast('Weight harus antara 0-100', 'error');
@@ -667,8 +624,7 @@ export class OTPCreatePage {
         
         try {
             const user = this.state.currentUser || {};
-            
-            // Ambil data tambahan dari auto-fill fields
+
             const kpiName = document.getElementById('otpKPIName')?.value || '';
             const kpiUOM = document.getElementById('otpKPIUOM')?.value || '';
             const kpiPolarity = document.getElementById('otpKPIPolarity')?.value || '';
@@ -697,26 +653,22 @@ export class OTPCreatePage {
             let result;
             
             if (this.isEditMode && data.originalOtpId) {
-                // Mode edit: update OTP yang sudah ada
                 payload.originalOtpId = data.originalOtpId;
                 payload.rowIndex = data.rowIndex;
                 result = await this.updateOTP(payload);
             } else {
-                // Mode create: simpan OTP baru
                 result = await this.saveOTP(payload);
             }
             
             if (result.status === 'success') {
                 toast(this.isEditMode ? 'Revisi OTP berhasil disubmit!' : 'OTP berhasil disubmit!', 'success');
                 form.reset();
-                // Reset auto-fill fields
                 ['otpObjective', 'otpKPIName', 'otpKPIUOM', 'otpKPIPolarity', 'otpKPIFormula',
                  'otpHazardDesc', 'otpProgramControl', 'otpActivity'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
                 
-                // Redirect ke OTP History setelah 1.5 detik
                 setTimeout(() => {
                     this.router.navigateTo('otp-history');
                 }, 1500);
@@ -789,17 +741,10 @@ export class OTPCreatePage {
         }
     }
 
-    // ============================================
-    // AFTER RENDER HOOK
-    // ============================================
-    
+   
     afterRender() {
         this.setupEventListeners();
     }
-
-    // ============================================
-    // UTILITY METHODS
-    // ============================================
     
     escapeHtml(str) {
         if (!str) return '';

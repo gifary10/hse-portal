@@ -1,125 +1,117 @@
 // pages/reports.js
-// Reports Page - Laporan untuk Department User
-// Menampilkan ringkasan OTP department, temuan, dan progress
+// Reports Page - Dengan Partial Update untuk filter
 
 import { toast } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { BasePage } from '../core/base-page.js';
+import { getStatusBadge, formatDate, formatTime, escapeHtml, setButtonLoading, downloadAsCSV } from '../ui/utils.js';
 
-export class ReportsPage {
+export class ReportsPage extends BasePage {
     constructor(state, db, router) {
-        this.state = state;
-        this.db = db;
-        this.router = router;
-        this.isLoading = false;
-        this.isRefreshing = false;
+        super(state, db, router, 'reports');
         
-        // Data
-        this.otpData = [];
-        this.temuanData = [];
-        this.iadlData = [];
-        
-        // Filter
-        this.selectedYear = new Date().getFullYear().toString();
+        // Additional filters specific to Reports
         this.selectedPeriod = '';
-        
-        // Cache
-        this.lastFetchTime = null;
     }
 
     // ============================================
-    // DATA FETCHING
+    // DATA LOADING
     // ============================================
     
-    async fetchFromSheets(action, params = {}) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'local', data: [], total: 0 };
-        }
-
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            
-            for (const [key, value] of Object.entries(params)) {
-                if (value !== undefined && value !== null && value !== '') {
-                    url.searchParams.append(key, typeof value === 'object' ? 
-                        JSON.stringify(value) : value.toString());
-                }
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
-            if (result.status === 'success' && result.data) {
-                return result;
-            }
-            
-            return result;
-            
-        } catch (error) {
-            console.error(`Reports fetch ${action} error:`, error);
-            return { status: 'error', data: [], total: 0, message: error.message };
-        }
-    }
-
-    async loadReportData() {
+    async loadData() {
         const user = this.state.currentUser;
         const userDept = user?.department || '';
         
-        try {
-            // Fetch data berdasarkan department user
-            const [otpResult, temuanResult] = await Promise.all([
-                this.fetchFromSheets('getOTPByDept', { department: userDept }),
-                this.fetchFromSheets('getTemuanByDept', { department: userDept })
-            ]);
-            
-            this.otpData = otpResult.data || [];
-            this.temuanData = temuanResult.data || [];
-            this.lastFetchTime = new Date();
-            
-        } catch (error) {
-            console.error('Failed to load report data:', error);
-            throw error;
-        }
+        const [otpResult, temuanResult] = await Promise.all([
+            this.fetchFromSheets('getOTPByDept', { department: userDept }),
+            this.fetchFromSheets('getTemuanByDept', { department: userDept })
+        ]);
+        
+        this.allData = {
+            otp: otpResult.data || [],
+            temuan: temuanResult.data || []
+        };
+        
+        this.lastFetchTime = new Date();
+    }
+
+    formatOTPData(item) {
+        if (!item) return {};
+        
+        return {
+            otpId: item.OTP_ID || item.otpId || '',
+            department: item.Department || item.department || '',
+            year: item.Year || item.year || '',
+            objective: item.Objective || item.objective || '',
+            kpiCode: item.KPI_Code || item.kpiCode || '',
+            kpiName: item.KPI_Name || item.kpiName || '',
+            target: item.Target || item.target || '',
+            timeline: item.Timeline || item.timeline || '',
+            owner: item.Owner || item.owner || '',
+            weight: item.Weight || item.weight || '',
+            status: item.Status || item.status || '',
+            createdDate: item.Created_Date || item.createdDate || item.CreatedAt || item.createdAt || ''
+        };
+    }
+
+    formatTemuanData(item) {
+        if (!item) return {};
+        
+        return {
+            temuanId: item.Temuan_ID || item.temuanId || '',
+            department: item.Department || item.department || '',
+            tanggalAudit: item.Tanggal_Audit || item.tanggalAudit || '',
+            kategoriTemuan: item.Kategori_Temuan || item.kategoriTemuan || '',
+            klasifikasi: item.Klasifikasi || item.klasifikasi || '',
+            uraianTemuan: item.Uraian_Temuan || item.uraianTemuan || '',
+            status: item.Status || item.status || '',
+            targetSelesai: item.Target_Selesai || item.targetSelesai || '',
+            createdAt: item.Created_At || item.createdAt || ''
+        };
     }
 
     // ============================================
-    // CALCULATIONS
+    // FILTER METHODS
     // ============================================
     
-    filterByYear(data, yearField = 'year') {
-        if (!this.selectedYear) return data;
-        return data.filter(item => {
-            const year = item.Year || item.year || item[yearField];
-            return year && year.toString() === this.selectedYear;
-        });
-    }
-    
-    filterByPeriod(data) {
-        if (!this.selectedPeriod) return data;
+    filterOTPData() {
+        let filtered = [...this.allData.otp];
         
-        return data.filter(item => {
-            const timeline = item.Timeline || item.timeline || '';
-            return timeline === this.selectedPeriod || timeline === 'Full Year';
-        });
+        // Filter by year
+        if (this.filterYear) {
+            filtered = filtered.filter(o => {
+                const year = o.Year || o.year;
+                return year && year.toString() === this.filterYear;
+            });
+        }
+        
+        // Filter by period (timeline)
+        if (this.selectedPeriod) {
+            filtered = filtered.filter(o => {
+                const timeline = o.Timeline || o.timeline || '';
+                return timeline === this.selectedPeriod || timeline === 'Full Year';
+            });
+        }
+        
+        return filtered;
+    }
+
+    filterTemuanData() {
+        let filtered = [...this.allData.temuan];
+        
+        // Filter by year from tanggalAudit
+        if (this.filterYear) {
+            filtered = filtered.filter(t => {
+                const date = t.Tanggal_Audit || t.tanggalAudit || t.Created_At || t.createdAt;
+                if (!date) return false;
+                return new Date(date).getFullYear().toString() === this.filterYear;
+            });
+        }
+        
+        return filtered;
     }
 
     getOTPStats() {
-        let filtered = this.filterByYear(this.otpData);
-        filtered = this.filterByPeriod(filtered);
+        const filtered = this.filterOTPData();
         
         const total = filtered.length;
         const approved = filtered.filter(o => (o.Status || o.status) === 'Approved').length;
@@ -127,22 +119,16 @@ export class ReportsPage {
         const submitted = filtered.filter(o => (o.Status || o.status) === 'Submitted').length;
         const draft = filtered.filter(o => (o.Status || o.status) === 'Draft').length;
         
-        // Hitung total weight
         const totalWeight = filtered.reduce((sum, o) => {
             const weight = parseFloat(o.Weight || o.weight || 0);
             return sum + (isNaN(weight) ? 0 : weight);
         }, 0);
         
-        return { total, approved, rejected, submitted, draft, totalWeight };
+        return { total, approved, rejected, submitted, draft, totalWeight, filtered };
     }
     
     getTemuanStats() {
-        let filtered = this.temuanData.filter(t => {
-            if (!this.selectedYear) return true;
-            const date = t.Tanggal_Audit || t.tanggalAudit || t.Created_At || t.createdAt;
-            if (!date) return false;
-            return new Date(date).getFullYear().toString() === this.selectedYear;
-        });
+        const filtered = this.filterTemuanData();
         
         const total = filtered.length;
         const open = filtered.filter(t => (t.Status || t.status) === 'Open').length;
@@ -150,7 +136,6 @@ export class ReportsPage {
         const closed = filtered.filter(t => (t.Status || t.status) === 'Closed').length;
         const verified = filtered.filter(t => (t.Status || t.status) === 'Verified').length;
         
-        // Overdue
         const overdue = filtered.filter(t => {
             const targetSelesai = t.Target_Selesai || t.targetSelesai;
             const status = t.Status || t.status;
@@ -158,16 +143,16 @@ export class ReportsPage {
             return new Date(targetSelesai) < new Date();
         }).length;
         
-        return { total, open, inProgress, closed, verified, overdue };
+        return { total, open, inProgress, closed, verified, overdue, filtered };
     }
 
-    getMonthlyOTPData() {
+    getMonthlyData() {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         const monthlyData = Array(12).fill(0).map(() => ({ created: 0, approved: 0 }));
         
-        this.otpData.forEach(o => {
+        this.allData.otp.forEach(o => {
             const year = (o.Year || o.year || '').toString();
-            if (year !== this.selectedYear) return;
+            if (year !== this.filterYear) return;
             
             const dateStr = o.Created_Date || o.createdDate || o.CreatedAt || o.createdAt;
             if (!dateStr) return;
@@ -187,28 +172,31 @@ export class ReportsPage {
     }
 
     // ============================================
-    // RENDER
+    // RENDER METHODS
     // ============================================
     
     async render() {
-        if (!this.isRefreshing) this.showLoading();
+        if (!this.isRefreshing) this.showLoading('Memuat data laporan...');
         
         try {
-            await this.loadReportData();
+            if (this.allData.otp?.length === 0 && this.allData.temuan?.length === 0) {
+                await this.loadData();
+            }
+            
             this.hideLoading();
-            return this.renderHTML();
+            return this.renderFullPage();
         } catch (error) {
-            console.error('Reports render error:', error);
+            console.error('Render error:', error);
             this.hideLoading();
             return this.renderError(error.message);
         }
     }
 
-    renderHTML() {
+    renderFullPage() {
         const user = this.state.currentUser || {};
         const otpStats = this.getOTPStats();
         const temuanStats = this.getTemuanStats();
-        const monthlyData = this.getMonthlyOTPData();
+        const monthlyData = this.getMonthlyData();
         
         return `
             <div class="page-header">
@@ -231,10 +219,10 @@ export class ReportsPage {
                 <div style="display: flex; align-items: start; gap: 12px;">
                     <i class="bi bi-info-circle-fill" style="color: var(--success); font-size: 1.2rem; margin-top: 2px;"></i>
                     <div>
-                        <strong style="color: var(--text);">Laporan Departemen: ${this.escapeHtml(user.department || 'All')}</strong>
+                        <strong style="color: var(--text);">Laporan Departemen: ${escapeHtml(user.department || 'All')}</strong>
                         <p style="margin: 4px 0 0; color: var(--text-light); font-size: var(--fs-sm);">
                             Ringkasan OTP dan temuan audit internal departemen Anda.
-                            ${this.lastFetchTime ? `Data diperbarui: ${this.formatTime(this.lastFetchTime)}` : ''}
+                            ${this.lastFetchTime ? `Data diperbarui: ${formatTime(this.lastFetchTime)}` : ''}
                         </p>
                     </div>
                 </div>
@@ -246,17 +234,18 @@ export class ReportsPage {
                     <div class="col-md-4">
                         <div class="form-group-custom">
                             <label><i class="bi bi-calendar"></i> Tahun</label>
-                            <select id="reportYearFilter" class="form-select">
-                                <option value="2024" ${this.selectedYear === '2024' ? 'selected' : ''}>2024</option>
-                                <option value="2025" ${this.selectedYear === '2025' ? 'selected' : ''}>2025</option>
-                                <option value="2026" ${this.selectedYear === '2026' ? 'selected' : ''}>2026</option>
+                            <select id="filterYearReportsInput" class="form-select">
+                                <option value="">Semua Tahun</option>
+                                <option value="2024" ${this.filterYear === '2024' ? 'selected' : ''}>2024</option>
+                                <option value="2025" ${this.filterYear === '2025' ? 'selected' : ''}>2025</option>
+                                <option value="2026" ${this.filterYear === '2026' ? 'selected' : ''}>2026</option>
                             </select>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-group-custom">
                             <label><i class="bi bi-clock"></i> Periode</label>
-                            <select id="reportPeriodFilter" class="form-select">
+                            <select id="filterPeriodReportsInput" class="form-select">
                                 <option value="">Semua Periode</option>
                                 <option value="Q1" ${this.selectedPeriod === 'Q1' ? 'selected' : ''}>Q1 (Jan-Mar)</option>
                                 <option value="Q2" ${this.selectedPeriod === 'Q2' ? 'selected' : ''}>Q2 (Apr-Jun)</option>
@@ -272,14 +261,33 @@ export class ReportsPage {
                                 <span class="badge-status info">
                                     <i class="bi bi-database"></i> ${otpStats.total} OTP, ${temuanStats.total} Temuan
                                 </span>
+                                ${(this.filterYear || this.selectedPeriod) ? `
+                                    <button class="btn btn-sm btn-link" data-action="reports.clearFilters" 
+                                            style="margin-left: 4px; padding: 2px 6px;">
+                                        <i class="bi bi-x-circle"></i> Clear
+                                    </button>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- Main Content Container for Partial Update -->
+            <div id="reportsContentContainer">
+                ${this.renderContentOnly({ otpStats, temuanStats, monthlyData })}
+            </div>
+        `;
+    }
+
+    async renderContentOnly(data) {
+        const otpStats = data.otpStats || this.getOTPStats();
+        const temuanStats = data.temuanStats || this.getTemuanStats();
+        const monthlyData = data.monthlyData || this.getMonthlyData();
+        
+        return `
             <!-- Stats Cards -->
-            <div class="row mb-md">
+            <div class="row mb-md" id="reportsStatsCards">
                 <div class="col-md-3 col-6 mb-sm">
                     <div class="app-card" style="text-align: center; padding: var(--space-md);">
                         <div style="font-size: var(--fs-2xl); font-weight: 700; color: var(--primary);">
@@ -314,13 +322,13 @@ export class ReportsPage {
                 </div>
             </div>
 
-            <!-- Progress Overview -->
+            <!-- Main Content Row -->
             <div class="row">
                 <div class="col-md-8">
-                    <!-- Monthly Progress Chart (Simple Bar) -->
+                    <!-- Monthly Progress Chart -->
                     <div class="app-card mb-md">
                         <div class="card-header">
-                            <h3 class="card-title"><i class="bi bi-graph-up"></i> Progress OTP Bulanan (${this.selectedYear})</h3>
+                            <h3 class="card-title"><i class="bi bi-graph-up"></i> Progress OTP Bulanan (${this.filterYear || 'All Years'})</h3>
                         </div>
                         <div style="padding: var(--space-md);">
                             ${this.renderMonthlyChart(monthlyData)}
@@ -331,9 +339,12 @@ export class ReportsPage {
                     <div class="app-card mb-md">
                         <div class="card-header">
                             <h3 class="card-title"><i class="bi bi-list-check"></i> Detail OTP</h3>
+                            <button class="btn btn-sm btn-outline-primary" data-action="reports.exportCSV">
+                                <i class="bi bi-download"></i> Export CSV
+                            </button>
                         </div>
                         <div class="table-wrapper">
-                            ${this.renderOTPTable()}
+                            ${this.renderOTPTable(otpStats.filtered)}
                         </div>
                     </div>
                 </div>
@@ -361,16 +372,16 @@ export class ReportsPage {
 
                     <!-- Alerts -->
                     ${temuanStats.overdue > 0 ? `
-                    <div class="app-card" style="background: #fff5f5; border-left: 4px solid var(--danger);">
-                        <div class="card-header">
-                            <h3 class="card-title" style="color: var(--danger);">
-                                <i class="bi bi-exclamation-triangle-fill"></i> Perhatian
-                            </h3>
+                        <div class="app-card" style="background: #fff5f5; border-left: 4px solid var(--danger);">
+                            <div class="card-header">
+                                <h3 class="card-title" style="color: var(--danger);">
+                                    <i class="bi bi-exclamation-triangle-fill"></i> Perhatian
+                                </h3>
+                            </div>
+                            <p style="font-size: var(--fs-sm); color: var(--danger);">
+                                <strong>${temuanStats.overdue}</strong> temuan sudah melewati batas waktu penyelesaian!
+                            </p>
                         </div>
-                        <p style="font-size: var(--fs-sm); color: var(--danger);">
-                            <strong>${temuanStats.overdue}</strong> temuan sudah melewati batas waktu penyelesaian!
-                        </p>
-                    </div>
                     ` : ''}
                 </div>
             </div>
@@ -429,18 +440,10 @@ export class ReportsPage {
         `;
     }
 
-    renderOTPTable() {
-        let filtered = this.filterByYear(this.otpData);
-        filtered = this.filterByPeriod(filtered);
-        
-        // Sort by date descending
-        filtered.sort((a, b) => {
-            const dateA = new Date(a.Created_Date || a.createdDate || a.CreatedAt || a.createdAt || 0);
-            const dateB = new Date(b.Created_Date || b.createdDate || b.CreatedAt || b.createdAt || 0);
-            return dateB - dateA;
-        });
-        
-        const displayData = filtered.slice(0, 10); // Show top 10
+    renderOTPTable(otpList) {
+        const displayData = [...otpList]
+            .sort((a, b) => new Date(b.Created_Date || b.createdDate || b.CreatedAt || b.createdAt || 0) - new Date(a.Created_Date || a.createdDate || a.CreatedAt || a.createdAt || 0))
+            .slice(0, 10);
         
         if (displayData.length === 0) {
             return `
@@ -466,11 +469,11 @@ export class ReportsPage {
                 <tbody>
                     ${displayData.map(o => `
                         <tr>
-                            <td><code style="font-size: var(--fs-xs);">${this.escapeHtml(o.OTP_ID || o.otpId || '-')}</code></td>
-                            <td class="col-wrap">${this.escapeHtml((o.Objective || o.objective || '').substring(0, 60))}</td>
-                            <td><strong>${this.escapeHtml(o.Target || o.target || '-')}</strong></td>
-                            <td>${this.escapeHtml(o.Owner || o.owner || '-')}</td>
-                            <td>${this.getStatusBadge(o.Status || o.status)}</td>
+                            <td><code style="font-size: var(--fs-xs);">${escapeHtml(o.OTP_ID || o.otpId || '-')}</code></td>
+                            <td class="col-wrap">${escapeHtml((o.Objective || o.objective || '').substring(0, 60))}</td>
+                            <td><strong>${escapeHtml(o.Target || o.target || '-')}</strong></td>
+                            <td>${escapeHtml(o.Owner || o.owner || '-')}</td>
+                            <td>${getStatusBadge(o.Status || o.status, 'otp')}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -575,39 +578,95 @@ export class ReportsPage {
     }
 
     // ============================================
-    // ACTION METHODS
+    // ACTION METHODS WITH PARTIAL UPDATE
     // ============================================
     
     async filterYear() {
-        const el = document.getElementById('reportYearFilter');
-        if (el) this.selectedYear = el.value;
-        await this.updateReportOnly();
+        const el = document.getElementById('filterYearReportsInput');
+        if (el) this.filterYear = el.value;
+        await this.updateContentOnly();
     }
     
     async filterPeriod() {
-        const el = document.getElementById('reportPeriodFilter');
+        const el = document.getElementById('filterPeriodReportsInput');
         if (el) this.selectedPeriod = el.value;
-        await this.updateReportOnly();
+        await this.updateContentOnly();
+    }
+
+    async clearFilters() {
+        this.filterYear = '';
+        this.selectedPeriod = '';
+        
+        setTimeout(() => {
+            const yearFilter = document.getElementById('filterYearReportsInput');
+            if (yearFilter) yearFilter.value = '';
+            
+            const periodFilter = document.getElementById('filterPeriodReportsInput');
+            if (periodFilter) periodFilter.value = '';
+        }, 100);
+        
+        await this.updateContentOnly();
+        toast('Filter dihapus', 'info');
+    }
+
+    async updateContentOnly() {
+        const container = document.getElementById('reportsContentContainer');
+        if (!container) {
+            const mainContent = document.getElementById('mainContent');
+            if (mainContent) {
+                mainContent.innerHTML = await this.render();
+                this.attachEventListeners();
+            }
+            return;
+        }
+        
+        // Animate fade out
+        container.style.opacity = '0';
+        container.style.transform = 'translateY(8px)';
+        container.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+        
+        await this.delay(150);
+        
+        // Get fresh data
+        const otpStats = this.getOTPStats();
+        const temuanStats = this.getTemuanStats();
+        const monthlyData = this.getMonthlyData();
+        
+        // Render new content
+        container.innerHTML = await this.renderContentOnly({ otpStats, temuanStats, monthlyData });
+        
+        // Animate fade in
+        requestAnimationFrame(() => {
+            container.style.opacity = '1';
+            container.style.transform = 'translateY(0)';
+        });
+        
+        this.attachEventListeners();
     }
 
     async refresh() {
         const refreshBtn = document.getElementById('refreshReportsBtn');
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <span>Memuat...</span>';
-        }
+        setButtonLoading(refreshBtn, true, 'Memuat...');
         
-        this.otpData = [];
-        this.temuanData = [];
+        this.allData = { otp: [], temuan: [] };
+        this.filterYear = '';
+        this.selectedPeriod = '';
+        
+        setTimeout(() => {
+            const yearFilter = document.getElementById('filterYearReportsInput');
+            if (yearFilter) yearFilter.value = '';
+            const periodFilter = document.getElementById('filterPeriodReportsInput');
+            if (periodFilter) periodFilter.value = '';
+        }, 100);
         
         try {
-            await this.loadReportData();
+            await this.loadData();
             this.isRefreshing = true;
             
             const mainContent = document.getElementById('mainContent');
             if (mainContent) {
-                mainContent.innerHTML = this.renderHTML();
-                this.afterRender();
+                mainContent.innerHTML = await this.render();
+                this.attachEventListeners();
             }
             
             this.isRefreshing = false;
@@ -615,10 +674,7 @@ export class ReportsPage {
         } catch (error) {
             toast('Gagal memuat data laporan', 'error');
         } finally {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
-            }
+            setButtonLoading(refreshBtn, false);
         }
     }
 
@@ -626,28 +682,22 @@ export class ReportsPage {
         const otpStats = this.getOTPStats();
         const temuanStats = this.getTemuanStats();
         
-        let csv = 'Kategori,Total\n';
-        csv += `Total OTP,${otpStats.total}\n`;
-        csv += `OTP Approved,${otpStats.approved}\n`;
-        csv += `OTP Submitted,${otpStats.submitted}\n`;
-        csv += `OTP Draft,${otpStats.draft}\n`;
-        csv += `OTP Rejected,${otpStats.rejected}\n`;
-        csv += `\n`;
-        csv += `Total Temuan,${temuanStats.total}\n`;
-        csv += `Temuan Open,${temuanStats.open}\n`;
-        csv += `Temuan In Progress,${temuanStats.inProgress}\n`;
-        csv += `Temuan Closed,${temuanStats.closed}\n`;
-        csv += `Temuan Verified,${temuanStats.verified}\n`;
-        csv += `Temuan Overdue,${temuanStats.overdue}\n`;
+        const csvData = [
+            { Kategori: 'Total OTP', Jumlah: otpStats.total },
+            { Kategori: 'OTP Approved', Jumlah: otpStats.approved },
+            { Kategori: 'OTP Submitted', Jumlah: otpStats.submitted },
+            { Kategori: 'OTP Draft', Jumlah: otpStats.draft },
+            { Kategori: 'OTP Rejected', Jumlah: otpStats.rejected },
+            { Kategori: '', Jumlah: '' },
+            { Kategori: 'Total Temuan', Jumlah: temuanStats.total },
+            { Kategori: 'Temuan Open', Jumlah: temuanStats.open },
+            { Kategori: 'Temuan In Progress', Jumlah: temuanStats.inProgress },
+            { Kategori: 'Temuan Closed', Jumlah: temuanStats.closed },
+            { Kategori: 'Temuan Verified', Jumlah: temuanStats.verified },
+            { Kategori: 'Temuan Overdue', Jumlah: temuanStats.overdue }
+        ];
         
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `report_department_${new Date().toISOString().split('T')[0]}.csv`;
-        link.click();
-        URL.revokeObjectURL(url);
-        
+        downloadAsCSV(csvData, `report_department_${new Date().toISOString().split('T')[0]}.csv`);
         toast('Laporan berhasil diexport ke CSV', 'success');
     }
 
@@ -655,121 +705,24 @@ export class ReportsPage {
         window.print();
     }
 
-    async updateReportOnly() {
-        const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
-            mainContent.innerHTML = this.renderHTML();
-            this.afterRender();
-        }
-    }
-
-    afterRender() {
-        const yearFilter = document.getElementById('reportYearFilter');
+    // Override attachEventListeners
+    attachEventListeners() {
+        const yearFilter = document.getElementById('filterYearReportsInput');
         if (yearFilter) {
-            yearFilter.addEventListener('change', () => this.filterYear());
+            const newFilter = yearFilter.cloneNode(true);
+            yearFilter.parentNode.replaceChild(newFilter, yearFilter);
+            newFilter.addEventListener('change', () => this.filterYear());
         }
         
-        const periodFilter = document.getElementById('reportPeriodFilter');
+        const periodFilter = document.getElementById('filterPeriodReportsInput');
         if (periodFilter) {
-            periodFilter.addEventListener('change', () => this.filterPeriod());
+            const newFilter = periodFilter.cloneNode(true);
+            periodFilter.parentNode.replaceChild(newFilter, periodFilter);
+            newFilter.addEventListener('change', () => this.filterPeriod());
         }
     }
 
-    // ============================================
-    // HELPER METHODS
-    // ============================================
-    
-    getStatusBadge(status) {
-        const badges = {
-            'Draft': 'warning',
-            'Submitted': 'info',
-            'In Review': 'info',
-            'Approved': 'success',
-            'Rejected': 'danger',
-            'Revision Requested': 'warning'
-        };
-        const label = status || 'Draft';
-        const type = badges[label] || 'default';
-        return `<span class="badge-status ${type}">${label}</span>`;
-    }
-
-    formatDate(dateString) {
-        if (!dateString) return '-';
-        try {
-            const date = new Date(dateString);
-            if (isNaN(date.getTime())) return dateString;
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-            });
-        } catch (e) {
-            return dateString;
-        }
-    }
-
-    formatTime(date) {
-        if (!date) return 'Belum diperbarui';
-        try {
-            return date.toLocaleTimeString('id-ID', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch (e) {
-            return '-';
-        }
-    }
-
-    escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
-    showLoading() {
-        this.isLoading = true;
-        const mainContent = document.getElementById('mainContent');
-        if (mainContent) {
-            mainContent.innerHTML = `
-                <div class="page-header">
-                    <div class="page-header-left">
-                        <h1 class="page-title">Reports</h1>
-                        <p class="breadcrumb">Home / <span>Reports</span></p>
-                    </div>
-                </div>
-                <div class="app-card">
-                    <div class="empty-state">
-                        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <h3 class="mt-md">Memuat Data Laporan...</h3>
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    hideLoading() { this.isLoading = false; }
-
-    renderError(message) {
-        return `
-            <div class="page-header">
-                <div class="page-header-left">
-                    <h1 class="page-title">Reports</h1>
-                    <p class="breadcrumb">Home / <span>Reports</span></p>
-                </div>
-            </div>
-            <div class="app-card">
-                <div class="empty-state">
-                    <i class="bi bi-exclamation-triangle" style="color: var(--danger); font-size: 3rem;"></i>
-                    <h2>Gagal Memuat Laporan</h2>
-                    <p>${this.escapeHtml(message || 'Terjadi kesalahan')}</p>
-                    <button class="btn btn-primary mt-md" data-action="reports.refresh">
-                        <i class="bi bi-arrow-repeat"></i> Coba Lagi
-                    </button>
-                </div>
-            </div>
-        `;
+    getMainContentContainer() {
+        return document.getElementById('reportsContentContainer');
     }
 }
