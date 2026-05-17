@@ -1,10 +1,11 @@
+// core/state.js
 export class AppState {
     constructor() {
         this.currentUser = null;
         this.sessionId = null;
         this.currentPage = 'monitoring';
         this.listeners = new Map();
-        this.isClearingUser = false;
+        this.isClearingUser = false; // Flag untuk mencegah multiple clear
     }
 
     setUser(user, sid) {
@@ -29,19 +30,30 @@ export class AppState {
         this.isClearingUser = true;
         
         try {
-             this.clearUserSessionStorage();
+            // Step 1: Hapus sessionStorage items yang berkaitan dengan user
+            this.clearUserSessionStorage();
+            
+            // Step 2: Hapus semua event listeners internal (opsional)
+            // Tidak perlu menghapus listeners, cukup clear data
+            
+            // Step 3: Simpan user lama untuk log jika diperlukan
             const oldUser = this.currentUser;
+            
+            // Step 4: Reset state
             this.currentUser = null;
             this.sessionId = null;
             
+            // Step 5: Emit event setelah state benar-benar bersih
             this.emit('userChanged', null);
             
+            // Step 6: Optional - log untuk debugging
             if (oldUser && console && CONFIG?.FEATURES?.DEBUG_MODE) {
                 console.log(`User ${oldUser.username} logged out successfully`);
             }
             
         } catch (error) {
             console.error('Error during clearUser:', error);
+            // Tetap reset state meskipun error
             this.currentUser = null;
             this.sessionId = null;
             this.emit('userChanged', null);
@@ -50,6 +62,10 @@ export class AppState {
         }
     }
     
+    /**
+     * Hapus semua data sessionStorage yang terkait dengan user
+     * Mencegah data draft terbawa setelah logout
+     */
     clearUserSessionStorage() {
         // Daftar key yang harus dihapus saat logout
         const keysToRemove = [
@@ -92,6 +108,7 @@ export class AppState {
      * @returns {boolean} - true jika aman untuk logout, false jika ada draft
      */
     canLogout() {
+        // Cek berbagai kemungkinan draft data di sessionStorage
         const draftKeys = [
             'editOTPData',
             'selectedOTP',
@@ -119,7 +136,7 @@ export class AppState {
             }
         }
         
-        return true;
+        return true; // Aman untuk logout
     }
     
     /**
@@ -254,12 +271,12 @@ export class AppState {
         // =============================================
         
         const roleAccess = {
-            // DEPARTMENT
+            // DEPARTMENT - UPDATED: tambah master-kpi dan master-template
             department: [
                 { section: 'otpManagement', items: ['otp-create', 'otp-history'] },
                 { section: 'monitoring', items: ['monitoring'] },
                 { section: 'temuan', items: ['temuan-daftar', 'temuan-tindak-lanjut'] },
-                { section: 'masterData', items: ['iadl-monokem'] },
+                { section: 'masterData', items: ['master-kpi', 'master-template', 'iadl-monokem'] },
                 { section: 'reports', items: ['reports'] },
             ],
             

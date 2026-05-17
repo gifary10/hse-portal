@@ -1,3 +1,6 @@
+// core/database.js
+// Google Sheets as the ONLY data source - No localStorage
+
 import { CONFIG, getWebAppUrl } from './config.js';
 
 export class DatabaseService {
@@ -117,7 +120,10 @@ export class DatabaseService {
         // Step 2: Clear all caches
         this.iadlCache = [];
         this.userCache = [];
-                
+        
+        // Step 3: Clear any pending requests (optional - untuk future implementation)
+        // Abort controller bisa ditambahkan di sini jika diperlukan
+        
         // Step 4: Logging untuk debugging (hanya jika debug mode aktif)
         const isDebugMode = CONFIG?.FEATURES?.DEBUG_MODE || false;
         if (isDebugMode && oldUser) {
@@ -152,6 +158,30 @@ export class DatabaseService {
 
     getIADLCache() {
         return this.iadlCache;
+    }
+    
+    /**
+     * Cek apakah user saat ini login
+     * @returns {boolean}
+     */
+    isLoggedIn() {
+        return this.currentUser !== null && this.sessionId !== null;
+    }
+    
+    /**
+     * Get current session ID
+     * @returns {string|null}
+     */
+    getSessionId() {
+        return this.sessionId;
+    }
+    
+    /**
+     * Get current user
+     * @returns {Object|null}
+     */
+    getCurrentUser() {
+        return this.currentUser;
     }
     
     /**

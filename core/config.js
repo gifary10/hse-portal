@@ -1,8 +1,10 @@
 // core/config.js
+// Centralized configuration for the application
+
 export const CONFIG = {
     // Google Sheets API Configuration
     GOOGLE_SHEETS: {
-        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbw5WRxg5Q59aq5MMmGK321kffh_luKxUPwJXaSkI_B1ZgPbqAk5mYCnfWp3DrSYdfvQlQ/exec',
+        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwtC52mlB_WRC01NsyC9epfeJWNmUTm8j70gYKVGv8Aa64FTVZZIZCew_O0nhQ8vWqcXw/exec',
         ENABLED: true,
         TIMEOUT: 30000
     },
@@ -10,7 +12,9 @@ export const CONFIG = {
     // Application Configuration
     APP: {
         NAME: 'EMS Monokem',
-        VERSION: '1.0.0'
+        VERSION: '1.0.0',
+        DEFAULT_PAGE: 'dashboard',
+        PAGE_SIZE: 10
     },
     
     // Feature Flags

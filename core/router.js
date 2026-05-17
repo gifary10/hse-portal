@@ -58,6 +58,7 @@ export class Router {
         const hasUser = this.state.currentUser !== null;
         
         if (hasUser) {
+            // Redirect ke monitoring page sesuai role setelah login
             this.navigateToDefaultPage();
         } else {
             this.navigateTo('login');
@@ -145,6 +146,10 @@ export class Router {
             return;
         }
         
+        // ============================================
+        // PENTING: Pastikan semua modal tertutup sebelum navigasi
+        // Ini mencegah masalah layar gelap setelah logout
+        // ============================================
         await this.ensureModalsClosed();
         
         // Animasi fade out
@@ -264,6 +269,19 @@ export class Router {
         };
         
         document.title = titles[page] || `${page} - EMS Monokem`;
+    }
+
+    isValidPage(page) {
+        const validPages = [
+            'login', 'otp-create', 'otp-history', 'otp-review',
+            'monitoring', 'monitoring-all', 'monitoring-exec',
+            'temuan-input', 'temuan-daftar', 'temuan-tindak-lanjut',
+            'master-kpi', 'master-template', 'iadl-monokem', 'management-review',
+            'management-decision', 'reports', 'reports-hse', 'executive-reports',
+            'user-management'
+        ];
+        
+        return validPages.includes(page);
     }
 
     renderErrorState(title, message) {
