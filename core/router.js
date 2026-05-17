@@ -113,10 +113,8 @@ export class Router {
 
         await this.ensureModalsClosed();
 
-        mainContent.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-        mainContent.style.opacity = '0';
-        mainContent.style.transform = 'translateY(10px)';
-        await this.delay(200);
+        // --- PERUBAHAN UTAMA: Tampilkan skeleton langsung, tanpa fade-out/delay ---
+        this.renderSkeleton(mainContent, page);
 
         try {
             this.state.currentPage = page;
@@ -128,22 +126,78 @@ export class Router {
                 this.pages[pageKey].afterRender();
             }
 
-            requestAnimationFrame(() => {
-                mainContent.style.opacity = '1';
-                mainContent.style.transform = 'translateY(0)';
-            });
-
             this.updateAfterNavigation();
             window.scrollTo({ top: 0, behavior: 'smooth' });
             this.updateDocumentTitle(page);
         } catch (error) {
             console.error('Navigation error:', error);
             mainContent.innerHTML = this.renderErrorState('Error Navigasi', error.message);
-            mainContent.style.opacity = '1';
-            mainContent.style.transform = 'translateY(0)';
         } finally {
             this.navigating = false;
         }
+    }
+
+    // Skeleton loader generik (bisa dikustomisasi per halaman nantinya)
+    renderSkeleton(container, page) {
+        const pageTitle = this.getPageTitle(page);
+        container.innerHTML = `
+            <div class="page-header skeleton-header">
+                <div class="page-header-left">
+                    <div class="skeleton-title"></div>
+                    <div class="skeleton-breadcrumb"></div>
+                </div>
+            </div>
+            <div class="app-card skeleton-card">
+                <div class="card-header">
+                    <div class="skeleton-card-title"></div>
+                </div>
+                <div class="skeleton-table">
+                    ${Array(5).fill(0).map(() => '<div class="skeleton-row"></div>').join('')}
+                </div>
+            </div>
+        `;
+
+        // Tambahkan style skeleton jika belum ada
+        if (!document.getElementById('skeleton-styles')) {
+            const style = document.createElement('style');
+            style.id = 'skeleton-styles';
+            style.textContent = `
+                .skeleton-header { background: var(--card); border-radius: var(--radius-xl); margin-bottom: var(--space-md); padding: var(--space-md); }
+                .skeleton-title { width: 40%; height: 28px; background: linear-gradient(90deg, #e2e8f0 25%, #f0f4f8 50%, #e2e8f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: var(--radius-md); margin-bottom: 8px; }
+                .skeleton-breadcrumb { width: 25%; height: 14px; background: linear-gradient(90deg, #e2e8f0 25%, #f0f4f8 50%, #e2e8f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: var(--radius-sm); }
+                .skeleton-card { background: var(--card); border-radius: var(--radius-xl); padding: var(--space-md); }
+                .skeleton-card-title { width: 30%; height: 20px; background: linear-gradient(90deg, #e2e8f0 25%, #f0f4f8 50%, #e2e8f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: var(--radius-sm); margin-bottom: var(--space-md); }
+                .skeleton-table { margin-top: var(--space-md); }
+                .skeleton-row { height: 40px; background: linear-gradient(90deg, #e2e8f0 25%, #f0f4f8 50%, #e2e8f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; margin-bottom: 8px; border-radius: var(--radius-sm); }
+                @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    getPageTitle(page) {
+        const titles = {
+            'login': 'Login',
+            'monitoring': 'Progress Monitoring',
+            'monitoring-all': 'All Monitoring',
+            'monitoring-exec': 'Monitoring Overview',
+            'otp-create': 'Create OTP',
+            'otp-history': 'OTP History',
+            'otp-review': 'Review OTP',
+            'temuan-input': 'Input Temuan',
+            'temuan-daftar': 'Daftar Temuan',
+            'temuan-tindak-lanjut': 'Tindak Lanjut Temuan',
+            'master-kpi': 'Master KPI',
+            'master-template': 'Objective Template',
+            'iadl-monokem': 'IADL Monokem',
+            'management-review': 'Management Review',
+            'management-decision': 'Management Decision',
+            'reports': 'Reports',
+            'reports-hse': 'HSE Reports',
+            'executive-reports': 'Executive Reports',
+            'user-management': 'User Management'
+        };
+        return titles[page] || page;
     }
 
     getPageKey(page) {

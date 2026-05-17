@@ -6,6 +6,19 @@ export class AppState {
         this.currentPage = 'monitoring';
         this.listeners = new Map();
         this.isClearingUser = false;
+        
+        // ========== TAMBAHAN: Shared data cache ==========
+        // Menyimpan data yang bisa digunakan antar halaman untuk mengurangi fetch berulang
+        this.sharedData = {
+            otp: null,           // { data: [], lastFetch: timestamp }
+            temuan: null,
+            managementReview: null,
+            managementDecision: null,
+            kpi: null,
+            templates: null,
+            iadl: null,
+            users: null
+        };
     }
 
     setUser(user, sid) {
@@ -22,6 +35,8 @@ export class AppState {
             const oldUser = this.currentUser;
             this.currentUser = null;
             this.sessionId = null;
+            // Bersihkan shared data saat logout
+            this.clearSharedData();
             this.emit('userChanged', null);
             if (oldUser && window.CONFIG?.FEATURES?.DEBUG_MODE) {
                 console.log(`User ${oldUser.username} logged out successfully`);
@@ -50,6 +65,49 @@ export class AppState {
         }
     }
 
+    // ========== METHOD UNTUK SHARED DATA ==========
+    clearSharedData() {
+        for (const key in this.sharedData) {
+            this.sharedData[key] = null;
+        }
+    }
+
+    /**
+     * Set data ke shared cache
+     * @param {string} type - 'otp', 'temuan', 'managementReview', dll
+     * @param {Array} data - Data array
+     */
+    setSharedData(type, data) {
+        if (this.sharedData.hasOwnProperty(type)) {
+            this.sharedData[type] = {
+                data: data,
+                lastFetch: Date.now()
+            };
+        }
+    }
+
+    /**
+     * Get data dari shared cache
+     * @param {string} type - tipe data
+     * @param {number} maxAge - maksimal umur data dalam ms (default 60000 = 1 menit)
+     * @returns {Array|null} - Data jika masih valid, null jika tidak ada atau expired
+     */
+    getSharedData(type, maxAge = 60000) {
+        const cached = this.sharedData[type];
+        if (cached && cached.data && (Date.now() - cached.lastFetch < maxAge)) {
+            return cached.data;
+        }
+        return null;
+    }
+
+    /**
+     * Cek apakah shared data tersedia dan masih fresh
+     */
+    hasSharedData(type, maxAge = 60000) {
+        const cached = this.sharedData[type];
+        return cached && cached.data && (Date.now() - cached.lastFetch < maxAge);
+    }
+
     emit(event, data) {
         const callbacks = this.listeners.get(event) || [];
         callbacks.forEach(cb => {
@@ -62,6 +120,8 @@ export class AppState {
     }
 
     getRoleMenus() {
+        // ... (kode getRoleMenus tidak berubah, tetap sama seperti sebelumnya)
+        // Saya salin dari kode asli untuk kelengkapan
         if (!this.currentUser) return [];
 
         const role = this.currentUser.role || 'department';

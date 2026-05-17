@@ -1,8 +1,12 @@
 // core/database.js
-import { CONFIG, getWebAppUrl } from './config.js';
+// [UPDATED: Menggunakan ApiService, standardisasi login, caching terpusat]
+
+import { getApi } from './api.js';
+import { CONFIG } from './config.js';
 
 export class DatabaseService {
     constructor() {
+        this.api = getApi();
         this.currentUser = null;
         this.sessionId = null;
         this.iadlCache = [];
@@ -13,39 +17,20 @@ export class DatabaseService {
         try {
             const users = await this.fetchUsers();
             this.userCache = users;
-            console.log('✅ Database initialized from Google Sheets');
+            console.log('✅ Database initialized from Google Sheets via ApiService');
         } catch (error) {
             console.error('Failed to initialize database:', error);
         }
     }
 
     async fetchFromSheets(action, params = {}) {
-        const webAppUrl = getWebAppUrl();
-        if (!webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            throw new Error('Google Sheets URL not configured');
-        }
+        // Delegasikan ke ApiService
         try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            for (const [key, value] of Object.entries(params)) {
-                if (value !== undefined && value !== null && value !== '') {
-                    url.searchParams.append(key, typeof value === 'object' ? JSON.stringify(value) : value.toString());
-                }
-            }
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            clearTimeout(timeoutId);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const result = await response.json();
+            const result = await this.api.fetch(action, params);
             return result;
         } catch (error) {
-            console.error('Google Sheets fetch error:', error);
-            throw error;
+            console.error('Database fetch error:', error);
+            return { status: 'error', data: [], message: error.message };
         }
     }
 
@@ -57,7 +42,7 @@ export class DatabaseService {
 
     async login(username, password) {
         try {
-            const result = await this.fetchFromSheets('login', { username, password });
+            const result = await this.api.login(username, password);
             if (result.status === 'success' && result.user) {
                 this.currentUser = result.user;
                 this.sessionId = 'session_' + Date.now();
@@ -77,6 +62,10 @@ export class DatabaseService {
         this.sessionId = null;
         this.iadlCache = [];
         this.userCache = [];
+        
+        // Bersihkan cache ApiService
+        this.api.clearCache();
+        
         const isDebugMode = CONFIG?.FEATURES?.DEBUG_MODE || false;
         if (isDebugMode && oldUser) {
             console.log(`✅ User "${oldUser.username}" logged out successfully at ${new Date().toISOString()}`);
