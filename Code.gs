@@ -95,7 +95,7 @@ function handleRequest(e) {
         break;
       
       // ============================================
-      // TEMUAN ACTIONS (Sheet: Temuan)
+      // TEMUAN ACTIONS (Sheet: Temuan) - UPDATED
       // ============================================
       case 'saveTemuan':
         const temuanData = JSON.parse(e.parameter.data || '{}');
@@ -220,7 +220,7 @@ function appendRowToSheet(sheetName, rowData) {
 }
 
 // ============================================
-// HELPER: Cari row berdasarkan ID dan update kolom
+// HELPER: Update row berdasarkan ID (umum, hati-hati)
 // ============================================
 function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
   const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
@@ -239,7 +239,6 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
   
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   
-  // Cari index kolom ID
   let idColIndex = -1;
   for (const name of idFieldNames) {
     idColIndex = headers.findIndex(h => h === name);
@@ -250,7 +249,6 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
     return { status: 'error', message: `Kolom ID tidak ditemukan. Pastikan salah satu kolom berikut ada: ${idFieldNames.join(', ')}` };
   }
   
-  // Cari row target
   const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
   const values = dataRange.getValues();
   
@@ -266,15 +264,10 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
     return { status: 'error', message: `Data dengan ID "${idValue}" tidak ditemukan.` };
   }
   
-  // Update kolom-kolom
-  for (const [fieldNames, value] of Object.entries(updates)) {
-    let colIndex = -1;
-    for (const name of fieldNames) {
-      colIndex = headers.findIndex(h => h === name);
-      if (colIndex !== -1) break;
-    }
-    
-    if (colIndex !== -1) {
+  // updates sekarang adalah object dengan key string (nama kolom) dan value
+  for (const [fieldName, value] of Object.entries(updates)) {
+    let colIndex = headers.findIndex(h => h === fieldName);
+    if (colIndex !== -1 && value !== undefined && value !== null) {
       sheet.getRange(targetRow, colIndex + 1).setValue(value);
     }
   }
@@ -412,6 +405,12 @@ function saveOTPData(data) {
   const rowNum = ((existingData.data?.length || 0) + 1).toString().padStart(3, '0');
   const otpId = `OTP-${year}-${dept}-${rowNum}`;
   
+  const programCode = data.programCode || '';
+  const hazardDesc = data.hazardDesc || '';
+  const dampak = data.dampak || '';
+  const deskripsiPengendalian = data.programControl || '';
+  const activity = data.activity || '';
+  
   const rowData = [
     otpId,
     data.department || '',
@@ -423,10 +422,10 @@ function saveOTPData(data) {
     data.uom || '',
     data.polarity || '',
     data.formula || '',
-    data.programCode || '',
-    data.hazardDesc || '',
-    data.programControl || '',
-    data.activity || '',
+    programCode,
+    hazardDesc,
+    deskripsiPengendalian,
+    activity,
     data.target || '',
     data.timeline || '',
     data.owner || '',
@@ -437,8 +436,18 @@ function saveOTPData(data) {
     data.createdBy || '',
     '', // reviewer_notes
     '', // reviewed_by
-    ''  // reviewed_date
+    '', // reviewed_date
+    dampak
   ];
+  
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('OTP');
+  if (sheet) {
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 26) {
+      sheet.getRange(1, 26).setValue('Dampak');
+    }
+  }
   
   const result = appendRowToSheet('OTP', rowData);
   
@@ -484,10 +493,8 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
       return { status: 'error', message: 'Tidak ada data OTP' };
     }
     
-    // Ambil headers dari baris pertama
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     
-    // Cari kolom-kolom yang diperlukan
     let idColIndex = -1;
     let statusColIndex = -1;
     let reviewerNotesColIndex = -1;
@@ -504,13 +511,13 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
       if (header === 'STATUS' || headerOriginal === 'Status' || headerOriginal === 'status') {
         statusColIndex = i;
       }
-      if (header === 'REVIEWER_NOTES' || headerOriginal === 'Reviewer_Notes' || headerOriginal === 'reviewerNotes' || headerOriginal === 'ReviewerNotes') {
+      if (header === 'REVIEWER_NOTES' || headerOriginal === 'Reviewer_Notes' || headerOriginal === 'reviewerNotes') {
         reviewerNotesColIndex = i;
       }
-      if (header === 'REVIEWED_BY' || headerOriginal === 'Reviewed_By' || headerOriginal === 'reviewedBy' || headerOriginal === 'ReviewedBy') {
+      if (header === 'REVIEWED_BY' || headerOriginal === 'Reviewed_By' || headerOriginal === 'reviewedBy') {
         reviewedByColIndex = i;
       }
-      if (header === 'REVIEWED_DATE' || headerOriginal === 'Reviewed_Date' || headerOriginal === 'reviewedDate' || headerOriginal === 'ReviewedDate') {
+      if (header === 'REVIEWED_DATE' || headerOriginal === 'Reviewed_Date' || headerOriginal === 'reviewedDate') {
         reviewedDateColIndex = i;
       }
     }
@@ -520,13 +527,11 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
     }
     
     if (statusColIndex === -1) {
-      // Buat kolom status jika belum ada
       const newColIndex = lastCol + 1;
       sheet.getRange(1, newColIndex).setValue('Status');
       statusColIndex = newColIndex - 1;
     }
     
-    // Cari baris yang mengandung OTP_ID
     const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
     const values = dataRange.getValues();
     
@@ -543,10 +548,8 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
       return { status: 'error', message: `OTP dengan ID "${otpId}" tidak ditemukan` };
     }
     
-    // Update status
     sheet.getRange(targetRow, statusColIndex + 1).setValue(status);
     
-    // Update reviewer notes
     if (reviewerNotesColIndex !== -1 && reviewerNotes) {
       sheet.getRange(targetRow, reviewerNotesColIndex + 1).setValue(reviewerNotes);
     } else if (reviewerNotes && reviewerNotesColIndex === -1) {
@@ -555,7 +558,6 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
       sheet.getRange(targetRow, newColIndex).setValue(reviewerNotes);
     }
     
-    // Update reviewed by
     if (reviewedByColIndex !== -1 && reviewedBy) {
       sheet.getRange(targetRow, reviewedByColIndex + 1).setValue(reviewedBy);
     } else if (reviewedBy && reviewedByColIndex === -1) {
@@ -564,7 +566,6 @@ function updateOTPStatus(otpId, status, reviewerNotes, reviewedBy, reviewedDate)
       sheet.getRange(targetRow, newColIndex).setValue(reviewedBy);
     }
     
-    // Update reviewed date
     if (reviewedDateColIndex !== -1 && reviewedDate) {
       sheet.getRange(targetRow, reviewedDateColIndex + 1).setValue(reviewedDate);
     } else if (reviewedDate && reviewedDateColIndex === -1) {
@@ -602,10 +603,8 @@ function updateOTP(data) {
       return { status: 'error', message: 'Tidak ada data OTP' };
     }
     
-    // Ambil headers dari baris pertama
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     
-    // Cari kolom OTP_ID
     let idColIndex = -1;
     let targetColIndex = -1;
     let timelineColIndex = -1;
@@ -620,8 +619,9 @@ function updateOTP(data) {
     let formulaColIndex = -1;
     let programCodeColIndex = -1;
     let hazardDescColIndex = -1;
-    let programControlColIndex = -1;
+    let deskripsiPengendalianColIndex = -1;
     let activityColIndex = -1;
+    let dampakColIndex = -1;
     let statusColIndex = -1;
     let updatedAtColIndex = -1;
     
@@ -643,8 +643,12 @@ function updateOTP(data) {
       if (header === 'FORMULA' || headerOriginal === 'Formula') formulaColIndex = i;
       if (header === 'PROGRAM_CODE' || headerOriginal === 'Program_Code') programCodeColIndex = i;
       if (header === 'HAZARD_DESC' || headerOriginal === 'Hazard_Description') hazardDescColIndex = i;
-      if (header === 'PROGRAM_CONTROL' || headerOriginal === 'Program_Control') programControlColIndex = i;
+      if (header === 'PROGRAM_CONTROL' || headerOriginal === 'Program_Control' || 
+          header === 'DESKRIPSI_PENGENDALIAN' || headerOriginal === 'Deskripsi_Pengendalian') {
+        deskripsiPengendalianColIndex = i;
+      }
       if (header === 'ACTIVITY' || headerOriginal === 'Activity') activityColIndex = i;
+      if (header === 'DAMPAK' || headerOriginal === 'Dampak') dampakColIndex = i;
       if (header === 'STATUS' || headerOriginal === 'Status') statusColIndex = i;
       if (header === 'UPDATED_AT' || headerOriginal === 'Updated_At') updatedAtColIndex = i;
     }
@@ -653,7 +657,6 @@ function updateOTP(data) {
       return { status: 'error', message: 'Kolom OTP_ID tidak ditemukan di sheet OTP' };
     }
     
-    // Cari baris yang mengandung OTP_ID
     const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
     const values = dataRange.getValues();
     
@@ -670,73 +673,28 @@ function updateOTP(data) {
       return { status: 'error', message: `OTP dengan ID "${data.originalOtpId}" tidak ditemukan` };
     }
     
-    // Update fields yang ada
-    if (targetColIndex !== -1 && data.target) {
-      sheet.getRange(targetRow, targetColIndex + 1).setValue(data.target);
-    }
+    if (targetColIndex !== -1 && data.target) sheet.getRange(targetRow, targetColIndex + 1).setValue(data.target);
+    if (timelineColIndex !== -1 && data.timeline) sheet.getRange(targetRow, timelineColIndex + 1).setValue(data.timeline);
+    if (ownerColIndex !== -1 && data.owner) sheet.getRange(targetRow, ownerColIndex + 1).setValue(data.owner);
+    if (weightColIndex !== -1 && data.weight) sheet.getRange(targetRow, weightColIndex + 1).setValue(data.weight);
+    if (budgetColIndex !== -1 && data.budget) sheet.getRange(targetRow, budgetColIndex + 1).setValue(data.budget);
+    if (objectiveColIndex !== -1 && data.objective) sheet.getRange(targetRow, objectiveColIndex + 1).setValue(data.objective);
+    if (kpiCodeColIndex !== -1 && data.kpiCode) sheet.getRange(targetRow, kpiCodeColIndex + 1).setValue(data.kpiCode);
+    if (kpiNameColIndex !== -1 && data.kpiName) sheet.getRange(targetRow, kpiNameColIndex + 1).setValue(data.kpiName);
+    if (uomColIndex !== -1 && data.uom) sheet.getRange(targetRow, uomColIndex + 1).setValue(data.uom);
+    if (polarityColIndex !== -1 && data.polarity) sheet.getRange(targetRow, polarityColIndex + 1).setValue(data.polarity);
+    if (formulaColIndex !== -1 && data.formula) sheet.getRange(targetRow, formulaColIndex + 1).setValue(data.formula);
     
-    if (timelineColIndex !== -1 && data.timeline) {
-      sheet.getRange(targetRow, timelineColIndex + 1).setValue(data.timeline);
-    }
+    if (programCodeColIndex !== -1 && data.programCode) sheet.getRange(targetRow, programCodeColIndex + 1).setValue(data.programCode);
+    if (hazardDescColIndex !== -1 && data.hazardDesc) sheet.getRange(targetRow, hazardDescColIndex + 1).setValue(data.hazardDesc);
+    if (deskripsiPengendalianColIndex !== -1 && data.programControl) sheet.getRange(targetRow, deskripsiPengendalianColIndex + 1).setValue(data.programControl);
+    if (activityColIndex !== -1 && data.activity) sheet.getRange(targetRow, activityColIndex + 1).setValue(data.activity);
+    if (dampakColIndex !== -1 && data.dampak) sheet.getRange(targetRow, dampakColIndex + 1).setValue(data.dampak);
     
-    if (ownerColIndex !== -1 && data.owner) {
-      sheet.getRange(targetRow, ownerColIndex + 1).setValue(data.owner);
-    }
-    
-    if (weightColIndex !== -1 && data.weight) {
-      sheet.getRange(targetRow, weightColIndex + 1).setValue(data.weight);
-    }
-    
-    if (budgetColIndex !== -1 && data.budget) {
-      sheet.getRange(targetRow, budgetColIndex + 1).setValue(data.budget);
-    }
-    
-    if (objectiveColIndex !== -1 && data.objective) {
-      sheet.getRange(targetRow, objectiveColIndex + 1).setValue(data.objective);
-    }
-    
-    if (kpiCodeColIndex !== -1 && data.kpiCode) {
-      sheet.getRange(targetRow, kpiCodeColIndex + 1).setValue(data.kpiCode);
-    }
-    
-    if (kpiNameColIndex !== -1 && data.kpiName) {
-      sheet.getRange(targetRow, kpiNameColIndex + 1).setValue(data.kpiName);
-    }
-    
-    if (uomColIndex !== -1 && data.uom) {
-      sheet.getRange(targetRow, uomColIndex + 1).setValue(data.uom);
-    }
-    
-    if (polarityColIndex !== -1 && data.polarity) {
-      sheet.getRange(targetRow, polarityColIndex + 1).setValue(data.polarity);
-    }
-    
-    if (formulaColIndex !== -1 && data.formula) {
-      sheet.getRange(targetRow, formulaColIndex + 1).setValue(data.formula);
-    }
-    
-    if (programCodeColIndex !== -1 && data.programCode) {
-      sheet.getRange(targetRow, programCodeColIndex + 1).setValue(data.programCode);
-    }
-    
-    if (hazardDescColIndex !== -1 && data.hazardDesc) {
-      sheet.getRange(targetRow, hazardDescColIndex + 1).setValue(data.hazardDesc);
-    }
-    
-    if (programControlColIndex !== -1 && data.programControl) {
-      sheet.getRange(targetRow, programControlColIndex + 1).setValue(data.programControl);
-    }
-    
-    if (activityColIndex !== -1 && data.activity) {
-      sheet.getRange(targetRow, activityColIndex + 1).setValue(data.activity);
-    }
-    
-    // Update status menjadi Submitted (karena sudah direvisi dan disubmit ulang)
     if (statusColIndex !== -1) {
       sheet.getRange(targetRow, statusColIndex + 1).setValue('Submitted');
     }
     
-    // Update timestamp
     if (updatedAtColIndex !== -1) {
       sheet.getRange(targetRow, updatedAtColIndex + 1).setValue(new Date().toISOString());
     } else {
@@ -768,7 +726,8 @@ function updateOTP(data) {
 }
 
 // ============================================
-// TEMUAN FUNCTIONS (Sheet: Temuan)
+// TEMUAN FUNCTIONS (Sheet: Temuan) - UPDATED
+// (Dihapus: Klausul_ISO, Regulasi, Bukti_Objektif, Pihak_Terkait, Penanggung_Jawab)
 // ============================================
 
 function saveTemuanData(data) {
@@ -779,38 +738,60 @@ function saveTemuanData(data) {
   const rowNum = ((existingData.data?.length || 0) + 1).toString().padStart(3, '0');
   const temuanId = `TMP-${year}-${dept}-${rowNum}`;
   
+  // Baris data sesuai kolom sheet (30 kolom)
   const rowData = [
-    temuanId,
-    data.department || '',
-    data.tanggalAudit || '',
-    data.kategoriTemuan || '',
-    data.klasifikasi || '',
-    data.klausulISO || '',
-    data.regulasi || '',
-    data.uraianTemuan || '',
-    data.buktiObjektif || '',
-    data.lokasi || '',
-    data.pihakTerkait || '',
-    data.akarMasalah || '',
-    data.dampak || '',
-    data.rekomendasi || '',
-    data.targetSelesai || '',
-    data.penanggungJawab || '',
-    data.prioritas || 'Sedang',
-    data.status || 'Open',
-    data.createdAt || new Date().toISOString(),
-    data.createdBy || '',
-    data.auditorDept || '',
-    '', // tindakan_perbaikan
-    '', // tindakan_pencegahan
-    '', // tgl_selesai
-    '', // hasil_verifikasi
-    '', // verifikator
-    '', // tgl_verifikasi
-    '', // catatan_tl
-    data.createdBy || '',
-    data.createdAt || new Date().toISOString()
+    temuanId,                              // Temuan_ID
+    data.department || '',                 // Department
+    data.tanggalAudit || '',               // Tanggal_Audit
+    data.kategoriTemuan || '',             // Kategori_Temuan
+    data.klasifikasi || '',                // Klasifikasi
+    '',                                    // Klausul_ISO (tidak digunakan)
+    '',                                    // Regulasi (tidak digunakan)
+    data.uraianTemuan || '',               // Uraian_Temuan
+    '',                                    // Bukti_Objektif (tidak digunakan)
+    data.lokasi || '',                     // Lokasi
+    '',                                    // Pihak_Terkait (tidak digunakan)
+    data.akarMasalah || '',                // Akar_Masalah
+    data.dampak || '',                     // Dampak
+    data.rekomendasi || '',                // Rekomendasi
+    data.targetSelesai || '',              // Target_Selesai
+    '',                                    // Penanggung_Jawab (tidak digunakan)
+    data.prioritas || 'Sedang',            // Prioritas
+    data.status || 'Open',                 // Status
+    data.createdAt || new Date().toISOString(), // Created_At
+    data.createdBy || '',                  // Created_By
+    data.auditorDept || '',                // Auditor_Dept
+    '',                                    // Tindakan_Perbaikan
+    '',                                    // Tindakan_Pencegahan
+    '',                                    // Tgl_Selesai
+    '',                                    // Hasil_Verifikasi
+    '',                                    // Verifikator
+    '',                                    // Tgl_Verifikasi
+    '',                                    // Catatan_TL
+    data.createdBy || '',                  // Updated_By
+    data.createdAt || new Date().toISOString()  // Updated_At
   ];
+  
+  // Pastikan sheet memiliki cukup kolom (minimal 30 kolom)
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName('Temuan');
+  if (sheet) {
+    const lastCol = sheet.getLastColumn();
+    if (lastCol < 30) {
+      const headers = [
+        'Temuan_ID', 'Department', 'Tanggal_Audit', 'Kategori_Temuan', 'Klasifikasi',
+        'Klausul_ISO', 'Regulasi', 'Uraian_Temuan', 'Bukti_Objektif', 'Lokasi',
+        'Pihak_Terkait', 'Akar_Masalah', 'Dampak', 'Rekomendasi', 'Target_Selesai',
+        'Penanggung_Jawab', 'Prioritas', 'Status', 'Created_At', 'Created_By',
+        'Auditor_Dept', 'Tindakan_Perbaikan', 'Tindakan_Pencegahan', 'Tgl_Selesai',
+        'Hasil_Verifikasi', 'Verifikator', 'Tgl_Verifikasi', 'Catatan_TL', 'Updated_By', 'Updated_At'
+      ];
+      // Tambahkan kolom jika kurang
+      for (let i = lastCol; i < headers.length; i++) {
+        sheet.getRange(1, i + 1).setValue(headers[i]);
+      }
+    }
+  }
   
   const result = appendRowToSheet('Temuan', rowData);
   
@@ -840,28 +821,94 @@ function getTemuanByDepartment(department) {
   return { status: 'success', data: filteredData, total: filteredData.length };
 }
 
+// ** DIPERBAIKI: updateTemuanTL sekarang menggunakan rowIndex (jika ada) atau pencarian ID dengan key string **
 function updateTemuanTL(data) {
-  const updates = {};
+  const sheetName = 'Temuan';
+  const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) {
+    return { status: 'error', message: `Sheet "${sheetName}" tidak ditemukan` };
+  }
   
-  if (data.status) updates[['Status', 'status']] = data.status;
-  if (data.tindakanPerbaikan) updates[['Tindakan_Perbaikan', 'tindakanPerbaikan']] = data.tindakanPerbaikan;
-  if (data.tindakanPencegahan) updates[['Tindakan_Pencegahan', 'tindakanPencegahan']] = data.tindakanPencegahan;
-  if (data.tglSelesai) updates[['Tgl_Selesai', 'tglSelesai']] = data.tglSelesai;
-  if (data.hasilVerifikasi) updates[['Hasil_Verifikasi', 'hasilVerifikasi']] = data.hasilVerifikasi;
-  if (data.verifikator) updates[['Verifikator', 'verifikator']] = data.verifikator;
-  if (data.tglVerifikasi) updates[['Tgl_Verifikasi', 'tglVerifikasi']] = data.tglVerifikasi;
-  if (data.catatanTL) updates[['Catatan_TL', 'catatanTL']] = data.catatanTL;
-  if (data.updatedBy) updates[['Updated_By', 'updatedBy']] = data.updatedBy;
-  if (data.updatedAt) updates[['Updated_At', 'updatedAt']] = data.updatedAt;
+  // Ambil header untuk mengetahui posisi kolom
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const getColIndex = (colName) => headers.findIndex(h => h === colName);
   
-  const result = findAndUpdateRow(
-    'Temuan',
-    ['Temuan_ID', 'temuanId', 'temuan_id', 'ID_Temuan'],
-    data.temuanId,
-    updates
-  );
+  // Tentukan baris target
+  let targetRow = -1;
   
-  if (result.status === 'error') return result;
+  // Prioritas: jika ada rowIndex yang valid (dari frontend)
+  if (data.rowIndex && !isNaN(parseInt(data.rowIndex))) {
+    targetRow = parseInt(data.rowIndex);
+    // Validasi minimal baris 2
+    if (targetRow < 2) targetRow = -1;
+  }
+  
+  // Jika tidak ada rowIndex atau tidak valid, cari berdasarkan Temuan_ID
+  if (targetRow === -1) {
+    const idCol = getColIndex('Temuan_ID');
+    if (idCol === -1) {
+      return { status: 'error', message: 'Kolom Temuan_ID tidak ditemukan' };
+    }
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return { status: 'error', message: 'Tidak ada data temuan' };
+    }
+    const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+    const values = dataRange.getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (String(values[i][idCol]) === String(data.temuanId)) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+  }
+  
+  if (targetRow === -1) {
+    return { status: 'error', message: `Temuan dengan ID ${data.temuanId} tidak ditemukan` };
+  }
+  
+  // Update kolom berdasarkan field yang dikirim
+  if (data.status !== undefined && data.status !== '') {
+    const idx = getColIndex('Status');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.status);
+  }
+  if (data.tindakanPerbaikan !== undefined && data.tindakanPerbaikan !== '') {
+    const idx = getColIndex('Tindakan_Perbaikan');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.tindakanPerbaikan);
+  }
+  if (data.tindakanPencegahan !== undefined && data.tindakanPencegahan !== '') {
+    const idx = getColIndex('Tindakan_Pencegahan');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.tindakanPencegahan);
+  }
+  if (data.tglSelesai !== undefined && data.tglSelesai !== '') {
+    const idx = getColIndex('Tgl_Selesai');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.tglSelesai);
+  }
+  if (data.hasilVerifikasi !== undefined && data.hasilVerifikasi !== '') {
+    const idx = getColIndex('Hasil_Verifikasi');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.hasilVerifikasi);
+  }
+  if (data.verifikator !== undefined && data.verifikator !== '') {
+    const idx = getColIndex('Verifikator');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.verifikator);
+  }
+  if (data.tglVerifikasi !== undefined && data.tglVerifikasi !== '') {
+    const idx = getColIndex('Tgl_Verifikasi');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.tglVerifikasi);
+  }
+  if (data.catatanTL !== undefined && data.catatanTL !== '') {
+    const idx = getColIndex('Catatan_TL');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.catatanTL);
+  }
+  if (data.updatedBy !== undefined && data.updatedBy !== '') {
+    const idx = getColIndex('Updated_By');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.updatedBy);
+  }
+  if (data.updatedAt !== undefined && data.updatedAt !== '') {
+    const idx = getColIndex('Updated_At');
+    if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.updatedAt);
+  }
   
   return { 
     status: 'success', 
@@ -922,9 +969,8 @@ function saveManagementReviewData(data) {
 
 function updateMRStatus(mrId, status, notes) {
   const updates = {};
-  
-  if (status) updates[['Status', 'status']] = status;
-  if (notes) updates[['Notes', 'notes']] = notes;
+  if (status) updates['Status'] = status;
+  if (notes) updates['Notes'] = notes;
   
   const result = findAndUpdateRow(
     'ManagementReview',
@@ -990,8 +1036,7 @@ function saveManagementDecisionData(data) {
 
 function updateMDStatus(mdId, status) {
   const updates = {};
-  
-  if (status) updates[['Status', 'status']] = status;
+  if (status) updates['Status'] = status;
   
   const result = findAndUpdateRow(
     'ManagementDecision',
