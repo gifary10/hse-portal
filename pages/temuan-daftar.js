@@ -1,16 +1,16 @@
 // pages/temuan-daftar.js
 // Daftar Temuan Page - Menampilkan list temuan audit internal
-// Dengan filter, search, dan status tracking
-// [UPDATED: Dihapus kolom Bukti Objektif, Pihak Terkait, Penanggung Jawab]
+// [UPDATED: Menggunakan ApiService, standardisasi field, loading states]
 
 import { toast } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class TemuanDaftarPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.currentPage = 1;
         this.pageSize = 10;
         this.searchQuery = '';
@@ -25,63 +25,35 @@ export class TemuanDaftarPage {
         this.allData = [];
     }
 
-    async fetchFromSheets(action, params = {}) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'local', data: [], total: 0, message: 'Google Sheets not configured' };
-        }
-
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            
-            for (const [key, value] of Object.entries(params)) {
-                if (value !== undefined && value !== null && value !== '') {
-                    url.searchParams.append(key, typeof value === 'object' ? 
-                        JSON.stringify(value) : value.toString());
-                }
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
-            if (result.status === 'success' && result.data) {
-                this.allData = this.formatData(result.data);
-            }
-            
-            return result;
-            
-        } catch (error) {
-            console.error('Google Sheets fetch error:', error);
-            return { status: 'local', data: this.allData, total: this.allData.length, message: error.message };
-        }
-    }
-
-    async getAllTemuan() {
+    // ============================================
+    // DATA FETCHING (menggunakan ApiService)
+    // ============================================
+    
+    async getAllTemuan(forceRefresh = false) {
         const user = this.state.currentUser;
         const userDept = user?.department || '';
         const userRole = user?.role || '';
         
+        let result;
         if (userRole === 'department' && userDept) {
-            return await this.fetchFromSheets('getTemuanByDept', { department: userDept });
+            result = await this.api.getTemuanByDept(userDept, {}, { forceRefresh });
+        } else {
+            result = await this.api.getAllTemuan({}, { forceRefresh });
         }
         
-        return await this.fetchFromSheets('getAllTemuan');
+        if (result.status === 'success' && result.data) {
+            this.allData = this.formatData(result.data);
+            this.totalData = this.allData.length;
+            this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        }
+        
+        return result;
     }
 
+    // ============================================
+    // DATA FORMATTING
+    // ============================================
+    
     formatItem(item) {
         if (!item) return {};
         
@@ -127,6 +99,10 @@ export class TemuanDaftarPage {
         return data.map(item => this.formatItem(item));
     }
 
+    // ============================================
+    // FILTER METHODS
+    // ============================================
+    
     getUniqueDepartments() {
         const departments = new Set();
         this.allData.forEach(item => {
@@ -188,24 +164,25 @@ export class TemuanDaftarPage {
             filtered = filtered.filter(item => item.klasifikasi === this.filterKlasifikasi);
         }
         
+        this.totalData = filtered.length;
+        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
         return filtered;
     }
 
+    // ============================================
+    // RENDER METHODS
+    // ============================================
+    
     async render() {
         if (!this.isRefreshing) this.showLoading();
         
         try {
             if (this.allData.length === 0) {
-                const result = await this.getAllTemuan();
-                if (result.status === 'error') {
-                    this.hideLoading();
-                    return this.renderError(result.message || 'Gagal memuat data');
-                }
+                await this.getAllTemuan();
             }
             
             const filteredData = this.applyFilters();
-            this.totalData = filteredData.length;
-            this.totalPages = Math.ceil(this.totalData / this.pageSize);
             
             if (this.currentPage > this.totalPages && this.totalPages > 0) {
                 this.currentPage = this.totalPages;
@@ -434,14 +411,14 @@ export class TemuanDaftarPage {
                 <td class="text-center">${rowNumber}</td>
                 <td><code style="font-size: var(--fs-xs);">${this.escapeHtml(item.temuanId || '-')}</code></td>
                 <td>${this.formatDate(item.tanggalAudit)}</td>
-                <td><span class="badge-status default">${this.escapeHtml(item.department || '-')}</span></td>
+                <td class="col-wrap"><span class="badge-status default">${this.escapeHtml(item.department || '-')}</span></td>
                 <td>${this.getKategoriBadge(item.kategoriTemuan)}</td>
-                <td>${this.getKlasifikasiBadge(item.klasifikasi)}</td>
+                <td class="col-wrap">${this.getKlasifikasiBadge(item.klasifikasi)}</td>
                 <td class="col-wrap">${highlightText(item.uraianTemuan)}</td>
-                <td>${this.formatDate(item.targetSelesai)}</td>
-                <td>${this.getPrioritasBadge(item.prioritas)}</td>
-                <td>${this.getStatusBadge(item.status)}</td>
-                <td>
+                <td class="col-wrap">${this.formatDate(item.targetSelesai)}</td>
+                <td class="col-wrap">${this.getPrioritasBadge(item.prioritas)}</td>
+                <td class="col-wrap">${this.getStatusBadge(item.status)}</td>
+                <td class="col-wrap">
                     <div class="d-flex gap-xs">
                         <button class="btn btn-sm btn-outline-primary" 
                                 data-action="temuanDaftar.viewDetail" 
@@ -456,8 +433,8 @@ export class TemuanDaftarPage {
                             <i class="bi bi-arrow-right-circle"></i>
                         </button>
                     </div>
-                </td>
-            </tr>
+                 </td>
+             </tr>
         `;
     }
 
@@ -503,12 +480,20 @@ export class TemuanDaftarPage {
         `;
     }
 
-    // Action methods
-    async goToPage(params) { this.currentPage = params.page; await this.updateTableOnly(); }
+    // ============================================
+    // ACTION METHODS (dengan loading state)
+    // ============================================
+    
+    async goToPage(params) { 
+        this.currentPage = params.page; 
+        await this.updateTableOnly(); 
+    }
 
     async refresh() {
         const refreshBtn = document.getElementById('refreshTemuanBtn');
+        let originalHTML = '';
         if (refreshBtn) {
+            originalHTML = refreshBtn.innerHTML;
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <span>Memuat...</span>';
         }
@@ -530,7 +515,7 @@ export class TemuanDaftarPage {
         }, 100);
         
         try {
-            await this.getAllTemuan();
+            await this.getAllTemuan(true); // force refresh
             this.isRefreshing = true;
             await this.updateTableOnly();
             this.isRefreshing = false;
@@ -540,7 +525,7 @@ export class TemuanDaftarPage {
         } finally {
             if (refreshBtn) {
                 refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
+                refreshBtn.innerHTML = originalHTML;
             }
         }
     }
@@ -614,8 +599,11 @@ export class TemuanDaftarPage {
         }
         
         const filteredData = this.applyFilters();
-        this.totalData = filteredData.length;
-        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
+        if (this.currentPage > this.totalPages && this.totalPages > 0) {
+            this.currentPage = this.totalPages;
+        }
+        if (this.currentPage < 1) this.currentPage = 1;
         
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
@@ -678,7 +666,10 @@ export class TemuanDaftarPage {
         });
     }
 
-    // Helper methods
+    // ============================================
+    // HELPER METHODS
+    // ============================================
+    
     getKategoriBadge(value) {
         const badges = {
             'Ketidaksesuaian': 'danger',
@@ -745,7 +736,7 @@ export class TemuanDaftarPage {
                 <th>Kategori</th><th>Klasifikasi</th>
                 <th>Uraian Temuan</th><th>Target Selesai</th>
                 <th>Prioritas</th><th>Status</th><th>Action</th>
-            </table></thead><tbody>
+            </tr></thead><tbody>
                 ${Array(5).fill(0).map(() => `
                     <tr class="skeleton-row">
                         <td class="text-center"><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:25px;margin:0 auto;"></div></td>

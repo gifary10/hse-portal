@@ -1,21 +1,24 @@
 // pages/otp-review.js
 // OTP Review Page - Menampilkan detail OTP (dengan multiple programs) dan memungkinkan review/approval
+// [UPDATED: Menggunakan ApiService, standardisasi field reviewedBy, loading states]
 
 import { toast, showModal, closeModal } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class OTPReviewPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.isLoading = false;
+        this.isSubmitting = false;
         this.otpData = null;
         this.otpId = null;
     }
 
     // ============================================
-    // DATA LOADING
+    // DATA LOADING (menggunakan ApiService)
     // ============================================
     
     async loadOTPData(otpId) {
@@ -30,24 +33,8 @@ export class OTPReviewPage {
             } catch (e) {}
         }
         
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            throw new Error('Google Sheets not configured');
-        }
-        
         try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'getAllOTP');
-            
-            const response = await fetch(url.toString(), {
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
+            const result = await this.api.getAllOTP();
             if (result.status === 'success' && result.data) {
                 const found = result.data.find(o => 
                     (o.OTP_ID === otpId || o.otpId === otpId)
@@ -532,7 +519,7 @@ export class OTPReviewPage {
     }
 
     // ============================================
-    // REVIEW ACTIONS
+    // REVIEW ACTIONS (dengan ApiService dan loading state)
     // ============================================
     
     canUserReview() {
@@ -571,7 +558,7 @@ export class OTPReviewPage {
         const form = document.getElementById('otpReviewForm');
         const formData = new FormData(form);
         const notes = formData.get('reviewerNotes') || '';
-        await this.performReview('Approved', notes);
+        await this.performReview('Approved', notes, element);
     }
 
     async reject(params, element) {
@@ -580,11 +567,11 @@ export class OTPReviewPage {
         const notes = formData.get('reviewerNotes') || '';
         
         if (!notes) {
-            this.showRejectConfirmation();
+            this.showRejectConfirmation(element);
             return;
         }
         
-        await this.performReview('Rejected', notes);
+        await this.performReview('Rejected', notes, element);
     }
 
     async requestRevision(params, element) {
@@ -597,10 +584,10 @@ export class OTPReviewPage {
             return;
         }
         
-        await this.performReview('Revision Requested', notes);
+        await this.performReview('Revision Requested', notes, element);
     }
 
-    showRejectConfirmation() {
+    showRejectConfirmation(triggerElement) {
         const content = `
             <div style="text-align: center;">
                 <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--danger);"></i>
@@ -621,33 +608,41 @@ export class OTPReviewPage {
         
         document.getElementById('confirmRejectWithoutNotesBtn').addEventListener('click', async () => {
             closeModal();
-            await this.performReview('Rejected', 'Ditolak tanpa catatan');
+            await this.performReview('Rejected', 'Ditolak tanpa catatan', triggerElement);
         });
     }
 
-    async performReview(status, notes) {
+    async performReview(status, notes, triggerElement) {
+        if (this.isSubmitting) return;
+        
         const otp = this.otpData;
         const user = this.state.currentUser;
+        const reviewedBy = user.username || user.name || '';
         
-        const approveBtn = document.querySelector('[data-action="otpReview.approve"]');
-        const rejectBtn = document.querySelector('[data-action="otpReview.reject"]');
-        const revisionBtn = document.querySelector('[data-action="otpReview.requestRevision"]');
+        // Disable semua tombol review
+        const buttons = document.querySelectorAll('[data-action="otpReview.approve"], [data-action="otpReview.reject"], [data-action="otpReview.requestRevision"]');
+        const originalTexts = [];
+        buttons.forEach(btn => {
+            originalTexts.push(btn.innerHTML);
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        });
         
-        if (approveBtn) approveBtn.disabled = true;
-        if (rejectBtn) rejectBtn.disabled = true;
-        if (revisionBtn) revisionBtn.disabled = true;
+        this.isSubmitting = true;
         
         try {
-            const result = await this.updateOTPStatus(otp.otpId, status, notes, user);
+            const result = await this.api.updateOTPStatus(otp.otpId, status, notes, reviewedBy, new Date().toISOString());
             
             if (result.status === 'success') {
                 toast(`OTP berhasil ${status === 'Approved' ? 'disetujui' : status === 'Rejected' ? 'ditolak' : 'direvisi'}!`, 'success');
                 
+                // Update local data
                 this.otpData.status = status;
                 this.otpData.reviewerNotes = notes;
-                this.otpData.reviewedBy = user.username || user.name || '';
+                this.otpData.reviewedBy = reviewedBy;
                 this.otpData.reviewedDate = new Date().toISOString();
                 
+                // Refresh halaman
                 const mainContent = document.getElementById('mainContent');
                 if (mainContent) {
                     mainContent.innerHTML = this.renderHTML();
@@ -657,49 +652,21 @@ export class OTPReviewPage {
                 }
             } else {
                 toast(result.message || 'Gagal melakukan review', 'error');
+                // Reset tombol
+                buttons.forEach((btn, idx) => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalTexts[idx];
+                });
+                this.isSubmitting = false;
             }
         } catch (error) {
             console.error('Review error:', error);
             toast('Gagal melakukan review: ' + error.message, 'error');
-        } finally {
-            if (approveBtn) approveBtn.disabled = false;
-            if (rejectBtn) rejectBtn.disabled = false;
-            if (revisionBtn) revisionBtn.disabled = false;
-        }
-    }
-
-    async updateOTPStatus(otpId, status, notes, user) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'updateOTPStatus');
-            url.searchParams.append('otpId', otpId);
-            url.searchParams.append('status', status);
-            url.searchParams.append('reviewerNotes', notes || '');
-            url.searchParams.append('reviewedBy', user.username || user.name || '');
-            url.searchParams.append('reviewedDate', new Date().toISOString());
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
+            buttons.forEach((btn, idx) => {
+                btn.disabled = false;
+                btn.innerHTML = originalTexts[idx];
             });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Response error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Update OTP status error:', error);
-            return { status: 'error', message: error.message };
+            this.isSubmitting = false;
         }
     }
 

@@ -1,19 +1,26 @@
 // pages/temuan-tindak-lanjut.js
 // Tindak Lanjut Temuan Page - Detail temuan dan update tindak lanjut
+// [UPDATED: Menggunakan ApiService, standardisasi field createdBy/updatedBy, loading states]
 
 import { toast, showModal, closeModal } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class TemuanTindakLanjutPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.isLoading = false;
+        this.isSubmitting = false;
         this.temuanData = null;
         this.temuanId = null;
     }
 
+    // ============================================
+    // DATA LOADING (menggunakan ApiService)
+    // ============================================
+    
     async loadTemuanData(temuanId) {
         const cachedData = sessionStorage.getItem('selectedTemuan');
         if (cachedData) {
@@ -26,24 +33,8 @@ export class TemuanTindakLanjutPage {
             } catch (e) {}
         }
         
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            throw new Error('Google Sheets not configured');
-        }
-        
         try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'getAllTemuan');
-            
-            const response = await fetch(url.toString(), {
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
+            const result = await this.api.getAllTemuan();
             if (result.status === 'success' && result.data) {
                 const found = result.data.find(t => 
                     (t.Temuan_ID === temuanId || t.temuanId === temuanId || t.ID_Temuan === temuanId)
@@ -104,6 +95,10 @@ export class TemuanTindakLanjutPage {
         return result;
     }
 
+    // ============================================
+    // RENDER
+    // ============================================
+    
     async render(page, params = {}) {
         this.temuanId = params.temuanId || sessionStorage.getItem('selectedTemuanId') || 
                         new URLSearchParams(window.location.search).get('temuanId');
@@ -390,7 +385,7 @@ export class TemuanTindakLanjutPage {
                                       placeholder="Catatan tambahan">${this.escapeHtml(temuan.catatanTL || '')}</textarea>
                         </div>
                         
-                        <button type="submit" class="btn btn-success w-100">
+                        <button type="submit" class="btn btn-success w-100" id="saveTLBtn">
                             <i class="bi bi-save"></i> Simpan Tindak Lanjut
                         </button>
                     </form>
@@ -403,7 +398,7 @@ export class TemuanTindakLanjutPage {
                 
                 ${this.canVerify() && temuan.status === 'Closed' ? `
                     <div class="mt-md pt-md border-top">
-                        <button class="btn btn-primary w-100" data-action="temuanTindakLanjut.verify">
+                        <button class="btn btn-primary w-100" id="verifyBtn" data-action="temuanTindakLanjut.verify">
                             <i class="bi bi-check-circle"></i> Verifikasi Temuan
                         </button>
                     </div>
@@ -434,14 +429,20 @@ export class TemuanTindakLanjutPage {
         `;
     }
 
+    // ============================================
+    // PERMISSIONS
+    // ============================================
+    
     canUserEdit() {
         const user = this.state.currentUser;
         if (!user) return false;
         
         if (user.role === 'hse' || user.role === 'top_management') return true;
         
+        const userIdentifier = user.username || user.name || '';
+        
         // Department user yang membuat temuan
-        if (this.temuanData && this.temuanData.createdBy === (user.username || user.name) &&
+        if (this.temuanData && this.temuanData.createdBy === userIdentifier &&
             (this.temuanData.status === 'Open' || this.temuanData.status === 'In Progress')) {
             return true;
         }
@@ -461,7 +462,13 @@ export class TemuanTindakLanjutPage {
         return user.role === 'hse' || user.role === 'top_management';
     }
 
+    // ============================================
+    // SAVE TINDAK LANJUT (dengan ApiService dan loading state)
+    // ============================================
+    
     async saveTindakLanjut(params, element) {
+        if (this.isSubmitting) return;
+        
         const form = document.getElementById('tindakLanjutForm');
         if (!form) {
             toast('Form tidak ditemukan', 'error');
@@ -480,8 +487,17 @@ export class TemuanTindakLanjutPage {
             return;
         }
         
+        this.isSubmitting = true;
+        const submitBtn = document.getElementById('saveTLBtn');
+        const originalHTML = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Menyimpan...';
+        }
+        
         try {
             const user = this.state.currentUser || {};
+            const updatedBy = user.username || user.name || '';
             
             const payload = {
                 temuanId: data.temuanId,
@@ -491,11 +507,11 @@ export class TemuanTindakLanjutPage {
                 tindakanPencegahan: data.tindakanPencegahan || '',
                 tglSelesai: data.tglSelesai || '',
                 catatanTL: data.catatanTL || '',
-                updatedBy: user.username || user.name || '',
+                updatedBy: updatedBy,
                 updatedAt: new Date().toISOString()
             };
             
-            const result = await this.saveTL(payload);
+            const result = await this.api.updateTemuanTL(payload);
             
             if (result.status === 'success') {
                 toast('Tindak lanjut berhasil disimpan!', 'success');
@@ -506,7 +522,7 @@ export class TemuanTindakLanjutPage {
                 this.temuanData.tindakanPencegahan = data.tindakanPencegahan;
                 this.temuanData.tglSelesai = data.tglSelesai;
                 this.temuanData.catatanTL = data.catatanTL;
-                this.temuanData.updatedBy = payload.updatedBy;
+                this.temuanData.updatedBy = updatedBy;
                 this.temuanData.updatedAt = payload.updatedAt;
                 
                 // Re-render halaman
@@ -516,14 +532,30 @@ export class TemuanTindakLanjutPage {
                 }
             } else {
                 toast(result.message || 'Gagal menyimpan tindak lanjut', 'error');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalHTML;
+                }
+                this.isSubmitting = false;
             }
         } catch (error) {
             console.error('Save TL error:', error);
             toast('Gagal menyimpan: ' + error.message, 'error');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHTML;
+            }
+            this.isSubmitting = false;
         }
     }
 
+    // ============================================
+    // VERIFIKASI (dengan ApiService dan loading state)
+    // ============================================
+    
     async verify() {
+        if (this.isSubmitting) return;
+        
         const content = `
             <div style="text-align: center;">
                 <i class="bi bi-check-circle" style="font-size: 3rem; color: var(--success);"></i>
@@ -547,73 +579,69 @@ export class TemuanTindakLanjutPage {
         
         showModal('Verifikasi Temuan', content);
         
-        document.getElementById('confirmVerifyBtn').addEventListener('click', async () => {
-            closeModal();
-            const hasilVerifikasi = document.getElementById('hasilVerifikasiInput')?.value || '';
-            
-            try {
-                const user = this.state.currentUser || {};
+        const confirmBtn = document.getElementById('confirmVerifyBtn');
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', async () => {
+                closeModal();
+                const hasilVerifikasi = document.getElementById('hasilVerifikasiInput')?.value || '';
                 
-                const payload = {
-                    temuanId: this.temuanData.temuanId,
-                    rowIndex: this.temuanData._rowIndex,
-                    status: 'Verified',
-                    hasilVerifikasi: hasilVerifikasi,
-                    verifikator: user.username || user.name || '',
-                    tglVerifikasi: new Date().toISOString(),
-                    updatedBy: user.username || user.name || '',
-                    updatedAt: new Date().toISOString()
-                };
-                
-                const result = await this.saveTL(payload);
-                
-                if (result.status === 'success') {
-                    toast('Temuan berhasil diverifikasi!', 'success');
-                    this.temuanData.status = 'Verified';
-                    this.temuanData.hasilVerifikasi = hasilVerifikasi;
-                    this.temuanData.verifikator = user.username || user.name || '';
-                    this.temuanData.tglVerifikasi = new Date().toISOString();
-                    
-                    const mainContent = document.getElementById('mainContent');
-                    if (mainContent) {
-                        mainContent.innerHTML = this.renderHTML();
-                    }
-                } else {
-                    toast(result.message || 'Gagal verifikasi', 'error');
+                this.isSubmitting = true;
+                const verifyBtn = document.getElementById('verifyBtn');
+                const originalHTML = verifyBtn ? verifyBtn.innerHTML : '';
+                if (verifyBtn) {
+                    verifyBtn.disabled = true;
+                    verifyBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Memverifikasi...';
                 }
-            } catch (error) {
-                toast('Gagal verifikasi: ' + error.message, 'error');
-            }
-        });
-    }
-
-    async saveTL(payload) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'updateTemuanTL');
-            url.searchParams.append('data', JSON.stringify(payload));
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
+                
+                try {
+                    const user = this.state.currentUser || {};
+                    const verifikator = user.username || user.name || '';
+                    
+                    const payload = {
+                        temuanId: this.temuanData.temuanId,
+                        rowIndex: this.temuanData._rowIndex,
+                        status: 'Verified',
+                        hasilVerifikasi: hasilVerifikasi,
+                        verifikator: verifikator,
+                        tglVerifikasi: new Date().toISOString(),
+                        updatedBy: verifikator,
+                        updatedAt: new Date().toISOString()
+                    };
+                    
+                    const result = await this.api.updateTemuanTL(payload);
+                    
+                    if (result.status === 'success') {
+                        toast('Temuan berhasil diverifikasi!', 'success');
+                        this.temuanData.status = 'Verified';
+                        this.temuanData.hasilVerifikasi = hasilVerifikasi;
+                        this.temuanData.verifikator = verifikator;
+                        this.temuanData.tglVerifikasi = new Date().toISOString();
+                        
+                        const mainContent = document.getElementById('mainContent');
+                        if (mainContent) {
+                            mainContent.innerHTML = this.renderHTML();
+                        }
+                    } else {
+                        toast(result.message || 'Gagal verifikasi', 'error');
+                    }
+                } catch (error) {
+                    console.error('Verification error:', error);
+                    toast('Gagal verifikasi: ' + error.message, 'error');
+                } finally {
+                    this.isSubmitting = false;
+                    if (verifyBtn) {
+                        verifyBtn.disabled = false;
+                        verifyBtn.innerHTML = originalHTML;
+                    }
+                }
             });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Save TL error:', error);
-            return { status: 'error', message: error.message };
         }
     }
 
+    // ============================================
+    // HELPER METHODS
+    // ============================================
+    
     isOverdue(targetDate) {
         if (!targetDate) return false;
         const target = new Date(targetDate);

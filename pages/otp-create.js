@@ -1,78 +1,42 @@
 // pages/otp-create.js
 // OTP Create/Edit Page - Support multiple programs from IADL
-// Mendukung mode: create (default) dan edit (untuk revision requested)
+// [UPDATED: Fixed multiple programs parsing, unified createdBy field, improved loading states]
 
 import { toast } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class OTPCreatePage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.isLoading = false;
         this.isSubmitting = false;
         this.isEditMode = false;
         this.editOtpId = null;
         this.editOtpData = null;
         
-        // Data referensi dari master
+        // Data referensi
         this.kpiList = [];
         this.templateList = [];
         this.iadlList = [];
         
-        // Selected values
-        this.selectedTemplate = null;
-        this.selectedKPI = null;
-        
         // MULTIPLE PROGRAMS
-        this.selectedPrograms = []; // Array of program objects: { programCode, hazardDesc, dampak, programControl, activity }
+        this.selectedPrograms = [];
         this.programCounter = 0;
     }
 
     // ============================================
-    // FETCH REFERENCE DATA
+    // FETCH REFERENCE DATA (menggunakan ApiService)
     // ============================================
     
-    async fetchReferenceData(action) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            console.warn('Google Sheets not configured');
-            return { status: 'error', data: [], message: 'Google Sheets not configured' };
-        }
-
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error(`Failed to fetch ${action}:`, error);
-            return { status: 'error', data: [], message: error.message };
-        }
-    }
-
     async loadReferenceData() {
         try {
             const [kpiResult, templateResult, iadlResult] = await Promise.all([
-                this.fetchReferenceData('getAllKPI'),
-                this.fetchReferenceData('getAllTemplates'),
-                this.fetchReferenceData('getAll')
+                this.api.getAllKPI(),
+                this.api.getAllTemplates(),
+                this.api.getAllIADL()
             ]);
             
             this.kpiList = kpiResult.data || [];
@@ -92,41 +56,27 @@ export class OTPCreatePage {
     }
 
     // ============================================
-    // LOAD EDIT DATA
+    // LOAD EDIT DATA (dengan ApiService)
     // ============================================
     
     async loadEditData(otpId) {
+        // Cek sessionStorage dulu
         const cachedEditData = sessionStorage.getItem('editOTPData');
         if (cachedEditData) {
             try {
                 const parsed = JSON.parse(cachedEditData);
                 if (parsed.otpId === otpId) {
-                    this.editOtpData = parsed;
-                    this.parseProgramsFromEditData(parsed);
+                    this.editOtpData = this.formatOTPDataForEdit(parsed);
+                    this.parseProgramsFromEditData(this.editOtpData);
                     sessionStorage.removeItem('editOTPData');
                     return;
                 }
             } catch (e) {}
         }
         
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            throw new Error('Google Sheets not configured');
-        }
-        
+        // Fetch dari API
         try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'getAllOTP');
-            
-            const response = await fetch(url.toString(), {
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
+            const result = await this.api.getAllOTP();
             if (result.status === 'success' && result.data) {
                 const found = result.data.find(o => 
                     (o.OTP_ID === otpId || o.otpId === otpId)
@@ -144,37 +94,7 @@ export class OTPCreatePage {
         }
     }
 
-    parseProgramsFromEditData(data) {
-        this.selectedPrograms = [];
-        
-        const programCodes = (data.programCode || '').split('|').filter(p => p && p.trim());
-        const hazardDescs = (data.hazardDesc || '').split('|').filter(p => p && p.trim());
-        const dampaks = (data.dampak || '').split('|').filter(p => p && p.trim());
-        const programControls = (data.programControl || '').split('|').filter(p => p && p.trim());
-        const activities = (data.activity || '').split('|').filter(p => p && p.trim());
-        
-        const maxLength = Math.max(
-            programCodes.length, hazardDescs.length, dampaks.length,
-            programControls.length, activities.length, 1
-        );
-        
-        for (let i = 0; i < maxLength; i++) {
-            if (i === 0 && programCodes.length === 0 && hazardDescs.length === 0) {
-                this.addEmptyProgram();
-                return;
-            }
-            
-            this.selectedPrograms.push({
-                programCode: programCodes[i] || '',
-                hazardDesc: hazardDescs[i] || '',
-                dampak: dampaks[i] || '',
-                programControl: programControls[i] || '',
-                activity: activities[i] || '',
-                id: Date.now() + this.programCounter++
-            });
-        }
-    }
-
+    // Format OTP data untuk edit (normalisasi field)
     formatOTPDataForEdit(item) {
         const fieldMapping = {
             otpId: ['OTP_ID', 'otpId', 'otp_id'],
@@ -216,9 +136,47 @@ export class OTPCreatePage {
             }
             result[field] = value || '';
         }
-        
         result._rowIndex = item.rowIndex || null;
         return result;
+    }
+
+    // Parse multiple programs dari data edit (dengan separator |)
+    parseProgramsFromEditData(data) {
+        this.selectedPrograms = [];
+        
+        // Ambil array dari masing-masing field yang dipisah |
+        const programCodes = (data.programCode || '').split('|').filter(p => p && p.trim());
+        const hazardDescs = (data.hazardDesc || '').split('|').filter(p => p && p.trim());
+        const dampaks = (data.dampak || '').split('|').filter(p => p && p.trim());
+        const programControls = (data.programControl || '').split('|').filter(p => p && p.trim());
+        const activities = (data.activity || '').split('|').filter(p => p && p.trim());
+        
+        // Panjang maksimal dari semua array
+        const maxLength = Math.max(
+            programCodes.length,
+            hazardDescs.length,
+            dampaks.length,
+            programControls.length,
+            activities.length,
+            1
+        );
+        
+        // Jika tidak ada program sama sekali, tambahkan satu kosong
+        if (maxLength === 1 && programCodes.length === 0 && hazardDescs.length === 0) {
+            this.addEmptyProgram();
+            return;
+        }
+        
+        for (let i = 0; i < maxLength; i++) {
+            this.selectedPrograms.push({
+                programCode: programCodes[i] || '',
+                hazardDesc: hazardDescs[i] || '',
+                dampak: dampaks[i] || '',
+                programControl: programControls[i] || '',
+                activity: activities[i] || '',
+                id: Date.now() + this.programCounter++
+            });
+        }
     }
 
     // ============================================
@@ -407,13 +365,16 @@ export class OTPCreatePage {
             }
         }
         
-        // If no valid program, add empty to avoid errors
-        if (programCodes.length === 0 && this.selectedPrograms.length > 0 && this.selectedPrograms[0].programCode === '') {
-            programCodes.push('');
-            hazardDescs.push('');
-            dampaks.push('');
-            programControls.push('');
-            activities.push('');
+        // Jika tidak ada program valid, kosongkan
+        if (programCodes.length === 0) {
+            return {
+                programCode: '',
+                hazardDesc: '',
+                dampak: '',
+                programControl: '',
+                activity: '',
+                programCount: 0
+            };
         }
         
         return {
@@ -422,7 +383,7 @@ export class OTPCreatePage {
             dampak: dampaks.join('|'),
             programControl: programControls.join('|'),
             activity: activities.join('|'),
-            programCount: programCodes.filter(c => c).length
+            programCount: programCodes.length
         };
     }
 
@@ -459,6 +420,8 @@ export class OTPCreatePage {
     renderHTML() {
         const user = this.state.currentUser || {};
         const userDept = user.department || '';
+        // Gunakan username sebagai standar createdBy
+        const username = user.username || user.name || '';
         const isEdit = this.isEditMode && this.editOtpData;
         
         const filteredKPIs = this.kpiList.filter(k => 
@@ -549,8 +512,9 @@ export class OTPCreatePage {
                         <div class="col-md-4">
                             <div class="form-group-custom">
                                 <label>Created By</label>
-                                <input type="text" class="form-control" value="${this.escapeHtml(user.name || user.username || '-')}" 
+                                <input type="text" class="form-control" value="${this.escapeHtml(username)}" 
                                        readonly style="background: #f8fafc;">
+                                <input type="hidden" name="createdBy" value="${this.escapeHtml(username)}">
                             </div>
                         </div>
                     </div>
@@ -816,7 +780,7 @@ export class OTPCreatePage {
     }
 
     // ============================================
-    // SUBMIT ACTIONS
+    // SUBMIT ACTIONS (dengan ApiService dan loading state)
     // ============================================
     
     async submit(params, element) {
@@ -872,6 +836,8 @@ export class OTPCreatePage {
         
         this.isSubmitting = true;
         const submitBtn = form.querySelector('button[type="submit"]');
+        const originalBtnHTML = submitBtn ? submitBtn.innerHTML : '';
+        
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Menyimpan...';
@@ -879,6 +845,7 @@ export class OTPCreatePage {
         
         try {
             const user = this.state.currentUser || {};
+            const username = user.username || user.name || '';
             
             const kpiName = document.getElementById('otpKPIName')?.value || '';
             const kpiUOM = document.getElementById('otpKPIUOM')?.value || '';
@@ -895,7 +862,7 @@ export class OTPCreatePage {
                 formula: kpiFormula || data.formula || '',
                 objective: objective || data.objective || '',
                 department: user.department || '',
-                createdBy: user.username || user.name || '',
+                createdBy: username,
                 status: 'Submitted',
                 createdAt: new Date().toISOString()
             };
@@ -905,9 +872,9 @@ export class OTPCreatePage {
             if (this.isEditMode && data.originalOtpId) {
                 payload.originalOtpId = data.originalOtpId;
                 payload.rowIndex = data.rowIndex;
-                result = await this.updateOTP(payload);
+                result = await this.api.updateOTP(payload);
             } else {
-                result = await this.saveOTP(payload);
+                result = await this.api.saveOTP(payload);
             }
             
             if (result.status === 'success') {
@@ -918,70 +885,20 @@ export class OTPCreatePage {
                 }, 1500);
             } else {
                 toast(result.message || 'Gagal menyimpan OTP', 'error');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHTML;
+                }
+                this.isSubmitting = false;
             }
         } catch (error) {
             console.error('Submit error:', error);
             toast('Gagal menyimpan OTP: ' + error.message, 'error');
-        } finally {
-            this.isSubmitting = false;
             if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="bi bi-send"></i> ' + (this.isEditMode ? 'Submit Revisi' : 'Submit for Approval');
+                submitBtn.innerHTML = originalBtnHTML;
             }
-        }
-    }
-    
-    async saveOTP(payload) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'saveOTP');
-            url.searchParams.append('data', JSON.stringify(payload));
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Save OTP error:', error);
-            return { status: 'error', message: error.message };
-        }
-    }
-
-    async updateOTP(payload) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'updateOTP');
-            url.searchParams.append('data', JSON.stringify(payload));
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Update OTP error:', error);
-            return { status: 'error', message: error.message };
+            this.isSubmitting = false;
         }
     }
 

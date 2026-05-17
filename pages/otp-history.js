@@ -1,15 +1,16 @@
 // pages/otp-history.js
 // OTP History Page - Menampilkan daftar OTP yang pernah dibuat
-// Dengan filter, search, dan status tracking - Support multiple programs
+// [UPDATED: Menggunakan ApiService, pagination dengan caching, loading states]
 
 import { toast } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class OTPHistoryPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.currentPage = 1;
         this.pageSize = 10;
         this.searchQuery = '';
@@ -24,74 +25,28 @@ export class OTPHistoryPage {
     }
 
     // ============================================
-    // GOOGLE SHEETS API CALLS
+    // DATA FETCHING (menggunakan ApiService dengan caching)
     // ============================================
     
-    async fetchFromSheets(action, params = {}) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return {
-                status: 'local',
-                data: [],
-                total: 0,
-                message: 'Google Sheets not configured'
-            };
-        }
-
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            
-            for (const [key, value] of Object.entries(params)) {
-                if (value !== undefined && value !== null && value !== '') {
-                    url.searchParams.append(key, typeof value === 'object' ? 
-                        JSON.stringify(value) : value.toString());
-                }
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const result = await response.json();
-            
-            if (result.status === 'success' && result.data) {
-                this.allData = this.formatData(result.data);
-            }
-            
-            return result;
-            
-        } catch (error) {
-            console.error('Google Sheets fetch error:', error);
-            return {
-                status: 'local',
-                data: this.allData,
-                total: this.allData.length,
-                message: error.message
-            };
-        }
-    }
-
-    async getAllOTP() {
+    async getAllOTP(forceRefresh = false) {
         const user = this.state.currentUser;
         const userDept = user?.department || '';
         const userRole = user?.role || '';
         
+        let result;
         if (userRole === 'department' && userDept) {
-            return await this.fetchFromSheets('getOTPByDept', { department: userDept });
+            result = await this.api.getOTPByDept(userDept, {}, { forceRefresh });
+        } else {
+            result = await this.api.getAllOTP({}, { forceRefresh });
         }
         
-        return await this.fetchFromSheets('getAllOTP');
+        if (result.status === 'success' && result.data) {
+            this.allData = this.formatData(result.data);
+            this.totalData = this.allData.length;
+            this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        }
+        
+        return result;
     }
 
     // ============================================
@@ -222,6 +177,9 @@ export class OTPHistoryPage {
             return dateB - dateA;
         });
         
+        this.totalData = filtered.length;
+        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
         return filtered;
     }
 
@@ -234,16 +192,10 @@ export class OTPHistoryPage {
         
         try {
             if (this.allData.length === 0) {
-                const result = await this.getAllOTP();
-                if (result.status === 'error') {
-                    this.hideLoading();
-                    return this.renderError(result.message || 'Gagal memuat data');
-                }
+                await this.getAllOTP();
             }
             
             const filteredData = this.applyFilters();
-            this.totalData = filteredData.length;
-            this.totalPages = Math.ceil(this.totalData / this.pageSize);
             
             if (this.currentPage > this.totalPages && this.totalPages > 0) {
                 this.currentPage = this.totalPages;
@@ -455,7 +407,6 @@ export class OTPHistoryPage {
     renderTableRow(item, rowNumber) {
         if (!item) return '';
         
-        // Get program count for display
         const programCount = item.programCount || 0;
         const programDisplay = programCount > 0 ? 
             `<span class="badge-status info" title="${programCount} program(s)">${programCount} prog</span>` : 
@@ -540,7 +491,7 @@ export class OTPHistoryPage {
     }
 
     // ============================================
-    // ACTION METHODS
+    // ACTION METHODS (dengan loading state)
     // ============================================
     
     async goToPage(params) {
@@ -550,7 +501,9 @@ export class OTPHistoryPage {
 
     async refresh() {
         const refreshBtn = document.getElementById('refreshOTPBtn');
+        let originalHTML = '';
         if (refreshBtn) {
+            originalHTML = refreshBtn.innerHTML;
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <span>Memuat...</span>';
         }
@@ -570,7 +523,7 @@ export class OTPHistoryPage {
         }, 100);
         
         try {
-            await this.getAllOTP();
+            await this.getAllOTP(true); // force refresh
             this.isRefreshing = true;
             await this.updateTableOnly();
             this.isRefreshing = false;
@@ -580,7 +533,7 @@ export class OTPHistoryPage {
         } finally {
             if (refreshBtn) {
                 refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Refresh</span>';
+                refreshBtn.innerHTML = originalHTML;
             }
         }
     }
@@ -647,8 +600,12 @@ export class OTPHistoryPage {
         }
         
         const filteredData = this.applyFilters();
-        this.totalData = filteredData.length;
-        this.totalPages = Math.ceil(this.totalData / this.pageSize);
+        
+        // Adjust current page if out of range
+        if (this.currentPage > this.totalPages && this.totalPages > 0) {
+            this.currentPage = this.totalPages;
+        }
+        if (this.currentPage < 1) this.currentPage = 1;
         
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const paginatedData = filteredData.slice(startIndex, startIndex + this.pageSize);
@@ -781,7 +738,7 @@ export class OTPHistoryPage {
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:30px;"></div></td>
                     </tr>
                 `).join('')}
-            </tbody>\\
+            </tbody></table>
         `;
     }
 

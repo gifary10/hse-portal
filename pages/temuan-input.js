@@ -1,50 +1,42 @@
 // pages/temuan-input.js
 // Input Temuan Audit Internal Page
-// Form untuk menginput temuan audit internal
+// [UPDATED: Menggunakan ApiService, standardisasi field createdBy, loading states]
 
 import { toast } from '../ui/components.js';
-import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
+import { getApi } from '../core/api.js';
 
 export class TemuanInputPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.isLoading = false;
         this.isSubmitting = false;
         
-        // Data referensi
+        // Data referensi (untuk dropdown departemen)
         this.kpiList = [];
         this.templateList = [];
         this.iadlList = [];
     }
 
+    // ============================================
+    // FETCH REFERENCE DATA (menggunakan ApiService)
+    // ============================================
+    
     async fetchReferenceData(action) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', data: [], message: 'Google Sheets not configured' };
-        }
-
         try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', action);
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), CONFIG.GOOGLE_SHEETS.TIMEOUT);
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                signal: controller.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
+            let result;
+            if (action === 'getAllKPI') {
+                result = await this.api.getAllKPI();
+            } else if (action === 'getAllTemplates') {
+                result = await this.api.getAllTemplates();
+            } else if (action === 'getAll') {
+                result = await this.api.getAllIADL();
+            } else {
+                return { status: 'error', data: [] };
+            }
+            return result;
         } catch (error) {
             console.error(`Failed to fetch ${action}:`, error);
             return { status: 'error', data: [], message: error.message };
@@ -63,12 +55,22 @@ export class TemuanInputPage {
             this.templateList = templateResult.data || [];
             this.iadlList = iadlResult.data || [];
             
+            console.log('Reference data loaded:', {
+                kpi: this.kpiList.length,
+                templates: this.templateList.length,
+                iadl: this.iadlList.length
+            });
+            
         } catch (error) {
             console.error('Failed to load reference data:', error);
             throw error;
         }
     }
 
+    // ============================================
+    // RENDER
+    // ============================================
+    
     async render() {
         this.showLoading();
         
@@ -86,6 +88,7 @@ export class TemuanInputPage {
     renderHTML() {
         const user = this.state.currentUser || {};
         const userDept = user.department || '';
+        const username = user.username || user.name || '';
         
         return `
             <div class="page-header">
@@ -117,8 +120,9 @@ export class TemuanInputPage {
                         <div class="col-md-4">
                             <div class="form-group-custom">
                                 <label>Auditor</label>
-                                <input type="text" class="form-control" value="${this.escapeHtml(user.name || user.username || '-')}" 
+                                <input type="text" class="form-control" value="${this.escapeHtml(username)}" 
                                        readonly style="background: #f8fafc;">
+                                <input type="hidden" name="createdBy" value="${this.escapeHtml(username)}">
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -294,6 +298,10 @@ export class TemuanInputPage {
         return Array.from(departments).sort();
     }
 
+    // ============================================
+    // SUBMIT ACTIONS (dengan ApiService dan loading state)
+    // ============================================
+    
     async submit(params, element) {
         if (this.isSubmitting) return;
         
@@ -309,7 +317,7 @@ export class TemuanInputPage {
             data[key] = value;
         });
         
-        // Validasi - field yang wajib
+        // Validasi
         if (!data.department) {
             toast('Silakan pilih department auditee', 'warning');
             return;
@@ -332,8 +340,10 @@ export class TemuanInputPage {
         }
         
         this.isSubmitting = true;
-        const submitBtn = form.querySelector('button[type="submit"]');
+        const submitBtn = document.getElementById('temuanSubmitBtn');
         const draftBtn = document.getElementById('temuanDraftBtn');
+        const originalSubmitHTML = submitBtn ? submitBtn.innerHTML : '';
+        const originalDraftHTML = draftBtn ? draftBtn.innerHTML : '';
         
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -343,16 +353,17 @@ export class TemuanInputPage {
         
         try {
             const user = this.state.currentUser || {};
+            const username = user.username || user.name || '';
             
             const payload = {
                 ...data,
-                createdBy: user.username || user.name || '',
+                createdBy: username,
                 auditorDept: user.department || '',
                 status: data.status || 'Open',
                 createdAt: new Date().toISOString()
             };
             
-            const result = await this.saveTemuan(payload);
+            const result = await this.api.saveTemuan(payload);
             
             if (result.status === 'success') {
                 toast('Temuan berhasil disimpan!', 'success');
@@ -363,17 +374,23 @@ export class TemuanInputPage {
                 }, 1500);
             } else {
                 toast(result.message || 'Gagal menyimpan temuan', 'error');
+                // Reset tombol jika gagal
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalSubmitHTML;
+                }
+                if (draftBtn) draftBtn.disabled = false;
+                this.isSubmitting = false;
             }
         } catch (error) {
             console.error('Submit error:', error);
             toast('Gagal menyimpan temuan: ' + error.message, 'error');
-        } finally {
-            this.isSubmitting = false;
             if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="bi bi-send"></i> Simpan Temuan';
+                submitBtn.innerHTML = originalSubmitHTML;
             }
             if (draftBtn) draftBtn.disabled = false;
+            this.isSubmitting = false;
         }
     }
 
@@ -394,6 +411,7 @@ export class TemuanInputPage {
         
         this.isSubmitting = true;
         const draftBtn = document.getElementById('temuanDraftBtn');
+        const originalHTML = draftBtn ? draftBtn.innerHTML : '';
         if (draftBtn) {
             draftBtn.disabled = true;
             draftBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Menyimpan...';
@@ -401,19 +419,21 @@ export class TemuanInputPage {
         
         try {
             const user = this.state.currentUser || {};
+            const username = user.username || user.name || '';
             
             const payload = {
                 ...data,
-                createdBy: user.username || user.name || '',
+                createdBy: username,
                 auditorDept: user.department || '',
                 status: 'Draft',
                 createdAt: new Date().toISOString()
             };
             
-            const result = await this.saveTemuan(payload);
+            const result = await this.api.saveTemuan(payload);
             
             if (result.status === 'success') {
                 toast('Draft temuan berhasil disimpan!', 'success');
+                form.reset();
             } else {
                 toast(result.message || 'Gagal menyimpan draft', 'error');
             }
@@ -421,41 +441,18 @@ export class TemuanInputPage {
             console.error('Save draft error:', error);
             toast('Gagal menyimpan draft: ' + error.message, 'error');
         } finally {
-            this.isSubmitting = false;
             if (draftBtn) {
                 draftBtn.disabled = false;
-                draftBtn.innerHTML = '<i class="bi bi-save"></i> Save as Draft';
+                draftBtn.innerHTML = originalHTML;
             }
+            this.isSubmitting = false;
         }
     }
 
-    async saveTemuan(payload) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'saveTemuan');
-            url.searchParams.append('data', JSON.stringify(payload));
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Save temuan error:', error);
-            return { status: 'error', message: error.message };
-        }
-    }
-
+    // ============================================
+    // UTILITY METHODS
+    // ============================================
+    
     escapeHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');

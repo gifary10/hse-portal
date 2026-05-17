@@ -1,11 +1,15 @@
 // pages/auth.js
+// [UPDATED: Standardisasi field username, loading state, dan konsistensi logout]
+
 import { toast } from '../ui/components.js';
+import { getApi } from '../core/api.js';
 
 export class AuthPage {
     constructor(state, db, router) {
         this.state = state;
         this.db = db;
         this.router = router;
+        this.api = getApi();
         this.usernames = [];
         this.isLoggingOut = false;
     }
@@ -47,7 +51,7 @@ export class AuthPage {
                             <label>Password</label>
                             <input type="password" name="password" required placeholder="Masukkan password">
                         </div>
-                        <button type="submit" class="btn btn-primary w-100 justify-content-center mt-md">
+                        <button type="submit" class="btn btn-primary w-100 justify-content-center mt-md" id="loginBtn">
                             <i class="bi bi-box-arrow-in-right"></i> Login
                         </button>
                     </form>
@@ -60,17 +64,23 @@ export class AuthPage {
         const username = formData.get('username');
         const password = formData.get('password');
         if (!username || !password) return;
+
         const submitBtn = form.querySelector('button[type="submit"]');
+        const originalHTML = submitBtn ? submitBtn.innerHTML : '';
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading...';
         }
+
         try {
             const result = await this.db.login(username, password);
             if (result.success) {
-                this.state.setUser(result.user, result.sessionId);
-                toast('Selamat datang, ' + result.user.name);
-                const role = result.user.role || 'department';
+                // Pastikan user object memiliki field username yang konsisten
+                const user = result.user;
+                if (!user.username && user.name) user.username = user.name;
+                this.state.setUser(user, result.sessionId);
+                toast('Selamat datang, ' + user.name);
+                const role = user.role || 'department';
                 if (role === 'top_management') {
                     this.router.navigateTo('monitoring-exec');
                 } else if (role === 'hse') {
@@ -83,29 +93,36 @@ export class AuthPage {
                 toast(result.message || 'Login gagal', 'error');
                 if (submitBtn) {
                     submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Login';
+                    submitBtn.innerHTML = originalHTML;
                 }
             }
         } catch (error) {
             toast('Gagal menghubungi server', 'error');
             if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Login';
+                submitBtn.innerHTML = originalHTML;
             }
         }
     }
 
     async logout() {
         if (this.isLoggingOut) return;
+
         const unsavedDrafts = this.getUnsavedDraftsList();
         let confirmMessage = unsavedDrafts.length > 0 ? 'Apakah tetap ingin logout?' : 'Apakah tetap ingin logout?';
         try {
             const confirmed = await this.showSimpleConfirmModal('Logout', confirmMessage);
             if (!confirmed) return;
+
             this.isLoggingOut = true;
             this.showLogoutLoading();
+
             await this.db.logout();
             await this.state.clearUser();
+
+            // Bersihkan cache ApiService
+            this.api.clearCache();
+
             const sidebarNav = document.getElementById('sidebarNav');
             if (sidebarNav) {
                 sidebarNav.style.transition = 'opacity 0.15s ease';
@@ -114,6 +131,7 @@ export class AuthPage {
                 sidebarNav.innerHTML = '';
                 sidebarNav.style.opacity = '1';
             }
+
             if (this.router.layout) this.router.layout.updateUserInfo();
             this.hideLogoutLoading();
             toast('Logout berhasil', 'success');
@@ -154,6 +172,7 @@ export class AuthPage {
             const bsModal = new bootstrap.Modal(modalElement, { backdrop: 'static', keyboard: false });
             bsModal.show();
             modalElement._bsModal = bsModal;
+
             let resolved = false;
             const cleanup = () => {
                 const confirmBtn = document.getElementById('simpleModalConfirmBtn');
