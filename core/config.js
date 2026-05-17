@@ -1,44 +1,30 @@
 // core/config.js
-// Centralized configuration for the application
-
 export const CONFIG = {
-    // Google Sheets API Configuration
     GOOGLE_SHEETS: {
-        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwtC52mlB_WRC01NsyC9epfeJWNmUTm8j70gYKVGv8Aa64FTVZZIZCew_O0nhQ8vWqcXw/exec',
+        WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwd4V5ykncUjXQl2MCUpQWyWh8E68kVC0E1O42L-uD8_QCmeJqFGo_rT5XEDvG27Cd1LQ/exec',
         ENABLED: true,
         TIMEOUT: 30000
     },
-    
-    // Application Configuration
     APP: {
         NAME: 'EMS Monokem',
         VERSION: '1.0.0',
         DEFAULT_PAGE: 'dashboard',
         PAGE_SIZE: 10
     },
-    
-    // Feature Flags
     FEATURES: {
         USE_GOOGLE_SHEETS: true,
         DEBUG_MODE: true
     }
 };
 
-// Helper functions
 export function getWebAppUrl() {
     return CONFIG.GOOGLE_SHEETS.WEB_APP_URL;
-}
-
-export function setWebAppUrl(url) {
-    CONFIG.GOOGLE_SHEETS.WEB_APP_URL = url;
-    localStorage.setItem('web_app_url', url);
 }
 
 export function isGoogleSheetsEnabled() {
     return CONFIG.FEATURES.USE_GOOGLE_SHEETS && CONFIG.GOOGLE_SHEETS.ENABLED;
 }
 
-// Load saved config from localStorage
 export function loadConfig() {
     const savedUrl = localStorage.getItem('web_app_url');
     if (savedUrl) {

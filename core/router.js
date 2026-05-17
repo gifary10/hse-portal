@@ -56,83 +56,48 @@ export class Router {
 
     init() {
         const hasUser = this.state.currentUser !== null;
-        
-        if (hasUser) {
-            // Redirect ke monitoring page sesuai role setelah login
-            this.navigateToDefaultPage();
-        } else {
-            this.navigateTo('login');
-        }
+        if (hasUser) this.navigateToDefaultPage();
+        else this.navigateTo('login');
     }
 
     navigateToDefaultPage() {
         const user = this.state.currentUser;
         const role = user?.role || 'department';
-        
-        if (role === 'top_management') {
-            this.navigateTo('monitoring-exec');
-        } else if (role === 'hse') {
-            this.navigateTo('monitoring-all');
-        } else {
-            this.navigateTo('monitoring');
-        }
+        if (role === 'top_management') this.navigateTo('monitoring-exec');
+        else if (role === 'hse') this.navigateTo('monitoring-all');
+        else this.navigateTo('monitoring');
     }
 
-    /**
-     * Cek apakah ada modal yang masih terbuka
-     * @returns {Promise<boolean>} - True jika ada modal terbuka
-     */
     async isModalOpen() {
         const modalElement = document.getElementById('mainModal');
-        if (modalElement && modalElement.classList.contains('show')) {
-            return true;
-        }
-        // Cek juga backdrop Bootstrap
-        const backdrop = document.querySelector('.modal-backdrop');
-        return backdrop !== null;
+        if (modalElement && modalElement.classList.contains('show')) return true;
+        return document.querySelector('.modal-backdrop') !== null;
     }
 
-    /**
-     * Tutup semua modal yang mungkin terbuka sebelum navigasi
-     * @returns {Promise<void>}
-     */
     async ensureModalsClosed() {
         const modalElement = document.getElementById('mainModal');
         if (modalElement && modalElement.classList.contains('show')) {
             await closeModal();
-            // Beri waktu ekstra untuk animasi modal tertutup
             await this.delay(150);
         }
-        
-        // Hapus backdrop yang mungkin tertinggal
         const backdrops = document.querySelectorAll('.modal-backdrop');
         backdrops.forEach(backdrop => {
-            if (backdrop && backdrop.parentNode) {
-                backdrop.parentNode.removeChild(backdrop);
-            }
+            if (backdrop && backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
         });
-        
-        // Hapus class modal-open dari body
         document.body.classList.remove('modal-open');
         document.body.style.overflow = '';
         document.body.style.paddingRight = '';
     }
 
     async navigateTo(page, params = {}) {
-        if (this.navigating) {
-            console.warn('Navigation in progress, ignoring request to:', page);
-            return;
-        }
-        
+        if (this.navigating) return;
         this.navigating = true;
-        
-        // Cek apakah user masih login (kecuali menuju login page)
+
         if (!this.state.currentUser && page !== 'login') {
             this.navigating = false;
             this.navigateTo('login');
             return;
         }
-
         if (this.state.currentUser && page === 'login') {
             this.navigating = false;
             this.navigateToDefaultPage();
@@ -145,44 +110,32 @@ export class Router {
             this.navigating = false;
             return;
         }
-        
-        // ============================================
-        // PENTING: Pastikan semua modal tertutup sebelum navigasi
-        // Ini mencegah masalah layar gelap setelah logout
-        // ============================================
+
         await this.ensureModalsClosed();
-        
-        // Animasi fade out
+
         mainContent.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
         mainContent.style.opacity = '0';
         mainContent.style.transform = 'translateY(10px)';
-        
         await this.delay(200);
-        
+
         try {
             this.state.currentPage = page;
-            
             const content = await this.renderPage(page, params);
-            
             mainContent.innerHTML = content;
-            
+
             const pageKey = this.getPageKey(page);
             if (this.pages[pageKey] && typeof this.pages[pageKey].afterRender === 'function') {
                 this.pages[pageKey].afterRender();
             }
-            
+
             requestAnimationFrame(() => {
                 mainContent.style.opacity = '1';
                 mainContent.style.transform = 'translateY(0)';
             });
-            
+
             this.updateAfterNavigation();
-            
-            // Scroll ke atas dengan smooth
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            
             this.updateDocumentTitle(page);
-            
         } catch (error) {
             console.error('Navigation error:', error);
             mainContent.innerHTML = this.renderErrorState('Error Navigasi', error.message);
@@ -220,12 +173,9 @@ export class Router {
 
     async renderPage(page, params = {}) {
         const pageKey = this.getPageKey(page);
-        
         if (this.pages[pageKey]) {
-            // Pass params ke method render
             return await this.pages[pageKey].render(page, params);
         }
-        
         console.warn(`Halaman tidak dikenal: ${page}, redirect ke monitoring`);
         this.state.currentPage = 'monitoring';
         return this.pages.monitoring.render('monitoring');
@@ -236,11 +186,10 @@ export class Router {
             this.layout.updateSidebar();
             this.layout.updateUserInfo();
         }
-        
         document.dispatchEvent(new CustomEvent('pageChanged', {
-            detail: { 
+            detail: {
                 page: this.state.currentPage,
-                user: this.state.currentUser 
+                user: this.state.currentUser
             }
         }));
     }
@@ -267,21 +216,7 @@ export class Router {
             'executive-reports': 'Executive Reports - EMS Monokem',
             'user-management': 'User Management - EMS Monokem'
         };
-        
         document.title = titles[page] || `${page} - EMS Monokem`;
-    }
-
-    isValidPage(page) {
-        const validPages = [
-            'login', 'otp-create', 'otp-history', 'otp-review',
-            'monitoring', 'monitoring-all', 'monitoring-exec',
-            'temuan-input', 'temuan-daftar', 'temuan-tindak-lanjut',
-            'master-kpi', 'master-template', 'iadl-monokem', 'management-review',
-            'management-decision', 'reports', 'reports-hse', 'executive-reports',
-            'user-management'
-        ];
-        
-        return validPages.includes(page);
     }
 
     renderErrorState(title, message) {
@@ -305,41 +240,6 @@ export class Router {
         `;
     }
 
-    getCurrentRoute() {
-        return {
-            page: this.state.currentPage,
-            user: this.state.currentUser,
-            timestamp: new Date().toISOString()
-        };
-    }
-
-    async refreshCurrentPage() {
-        const currentPage = this.state.currentPage;
-        const mainContent = document.getElementById('mainContent');
-        
-        if (mainContent) {
-            const content = await this.renderPage(currentPage);
-            mainContent.innerHTML = content;
-            
-            const pageKey = this.getPageKey(currentPage);
-            if (this.pages[pageKey] && typeof this.pages[pageKey].afterRender === 'function') {
-                this.pages[pageKey].afterRender();
-            }
-            
-            requestAnimationFrame(() => {
-                mainContent.style.opacity = '1';
-                mainContent.style.transform = 'translateY(0)';
-            });
-        }
-        
-        this.updateAfterNavigation();
-    }
-
-    /**
-     * Utility delay function
-     * @param {number} ms - Milliseconds to delay
-     * @returns {Promise<void>}
-     */
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
