@@ -1,6 +1,7 @@
 // pages/temuan-daftar.js
 // Daftar Temuan Page - Menampilkan list temuan audit internal
 // Dengan filter, search, dan status tracking
+// [UPDATED: Dihapus kolom Bukti Objektif, Pihak Terkait, Penanggung Jawab]
 
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
@@ -91,19 +92,19 @@ export class TemuanDaftarPage {
             kategoriTemuan: ['Kategori_Temuan', 'kategoriTemuan', 'kategori_temuan'],
             klasifikasi: ['Klasifikasi', 'klasifikasi'],
             uraianTemuan: ['Uraian_Temuan', 'uraianTemuan', 'uraian_temuan'],
-            buktiObjektif: ['Bukti_Objektif', 'buktiObjektif', 'bukti_objektif'],
             lokasi: ['Lokasi', 'lokasi'],
             akarMasalah: ['Akar_Masalah', 'akarMasalah', 'akar_masalah'],
             dampak: ['Dampak', 'dampak'],
             rekomendasi: ['Rekomendasi', 'rekomendasi'],
             targetSelesai: ['Target_Selesai', 'targetSelesai', 'target_selesai'],
-            penanggungJawab: ['Penanggung_Jawab', 'penanggungJawab', 'penanggung_jawab'],
             prioritas: ['Prioritas', 'prioritas'],
             status: ['Status', 'status'],
             createdAt: ['Created_At', 'createdAt', 'created_at'],
             createdBy: ['Created_By', 'createdBy', 'created_by'],
             auditorDept: ['Auditor_Dept', 'auditorDept', 'auditor_dept'],
-            pihakTerkait: ['Pihak_Terkait', 'pihakTerkait', 'pihak_terkait']
+            tindakanPerbaikan: ['Tindakan_Perbaikan', 'tindakanPerbaikan', 'tindakan_perbaikan'],
+            tindakanPencegahan: ['Tindakan_Pencegahan', 'tindakanPencegahan', 'tindakan_pencegahan'],
+            tglSelesai: ['Tgl_Selesai', 'tglSelesai', 'tgl_selesai']
         };
         
         const result = {};
@@ -166,9 +167,8 @@ export class TemuanDaftarPage {
             filtered = filtered.filter(item => 
                 (item.temuanId && item.temuanId.toLowerCase().includes(searchLower)) ||
                 (item.uraianTemuan && item.uraianTemuan.toLowerCase().includes(searchLower)) ||
-                (item.buktiObjektif && item.buktiObjektif.toLowerCase().includes(searchLower)) ||
                 (item.department && item.department.toLowerCase().includes(searchLower)) ||
-                (item.penanggungJawab && item.penanggungJawab.toLowerCase().includes(searchLower))
+                (item.lokasi && item.lokasi.toLowerCase().includes(searchLower))
             );
         }
         
@@ -255,7 +255,7 @@ export class TemuanDaftarPage {
                         <div class="form-group-custom">
                             <label><i class="bi bi-search"></i> Cari</label>
                             <input type="text" id="searchTemuanInput" class="form-control"
-                                   placeholder="Cari ID, uraian, bukti..." 
+                                   placeholder="Cari ID, uraian, lokasi..." 
                                    value="${this.escapeHtml(this.searchQuery)}">
                         </div>
                     </div>
@@ -407,7 +407,6 @@ export class TemuanDaftarPage {
                         <th style="min-width: 80px;">Klasifikasi</th>
                         <th style="min-width: 200px;">Uraian Temuan</th>
                         <th style="min-width: 100px;">Target Selesai</th>
-                        <th style="min-width: 100px;">PIC</th>
                         <th style="min-width: 80px;">Prioritas</th>
                         <th style="min-width: 85px;">Status</th>
                         <th style="min-width: 80px;">Action</th>
@@ -440,7 +439,6 @@ export class TemuanDaftarPage {
                 <td>${this.getKlasifikasiBadge(item.klasifikasi)}</td>
                 <td class="col-wrap">${highlightText(item.uraianTemuan)}</td>
                 <td>${this.formatDate(item.targetSelesai)}</td>
-                <td>${this.escapeHtml(item.penanggungJawab || '-')}</td>
                 <td>${this.getPrioritasBadge(item.prioritas)}</td>
                 <td>${this.getStatusBadge(item.status)}</td>
                 <td>
@@ -453,6 +451,7 @@ export class TemuanDaftarPage {
                         </button>
                         <button class="btn btn-sm btn-outline-success" 
                                 data-page="temuan-tindak-lanjut"
+                                data-params='${JSON.stringify({temuanId: item.temuanId}).replace(/'/g, "&#39;")}'
                                 title="Tindak Lanjut">
                             <i class="bi bi-arrow-right-circle"></i>
                         </button>
@@ -744,9 +743,9 @@ export class TemuanDaftarPage {
                 <th class="text-center" style="width:40px;">No</th>
                 <th>ID Temuan</th><th>Tgl Audit</th><th>Department</th>
                 <th>Kategori</th><th>Klasifikasi</th>
-                <th>Uraian Temuan</th><th>Target Selesai</th><th>PIC</th>
+                <th>Uraian Temuan</th><th>Target Selesai</th>
                 <th>Prioritas</th><th>Status</th><th>Action</th>
-            </tr></thead><tbody>
+            </table></thead><tbody>
                 ${Array(5).fill(0).map(() => `
                     <tr class="skeleton-row">
                         <td class="text-center"><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:25px;margin:0 auto;"></div></td>
@@ -756,7 +755,6 @@ export class TemuanDaftarPage {
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:80px;"></div></td>
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:60px;"></div></td>
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:150px;"></div></td>
-                        <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:80px;"></div></td>
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:80px;"></div></td>
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:60px;"></div></td>
                         <td><div style="height:1rem;background:#e2e8f0;border-radius:4px;width:70px;"></div></td>

@@ -68,26 +68,25 @@ export class TemuanTindakLanjutPage {
             kategoriTemuan: ['Kategori_Temuan', 'kategoriTemuan', 'kategori_temuan'],
             klasifikasi: ['Klasifikasi', 'klasifikasi'],
             uraianTemuan: ['Uraian_Temuan', 'uraianTemuan', 'uraian_temuan'],
-            buktiObjektif: ['Bukti_Objektif', 'buktiObjektif', 'bukti_objektif'],
             lokasi: ['Lokasi', 'lokasi'],
             akarMasalah: ['Akar_Masalah', 'akarMasalah', 'akar_masalah'],
             dampak: ['Dampak', 'dampak'],
             rekomendasi: ['Rekomendasi', 'rekomendasi'],
             targetSelesai: ['Target_Selesai', 'targetSelesai', 'target_selesai'],
-            penanggungJawab: ['Penanggung_Jawab', 'penanggungJawab', 'penanggung_jawab'],
             prioritas: ['Prioritas', 'prioritas'],
             status: ['Status', 'status'],
             createdAt: ['Created_At', 'createdAt', 'created_at'],
             createdBy: ['Created_By', 'createdBy', 'created_by'],
             auditorDept: ['Auditor_Dept', 'auditorDept', 'auditor_dept'],
-            pihakTerkait: ['Pihak_Terkait', 'pihakTerkait', 'pihak_terkait'],
             tindakanPerbaikan: ['Tindakan_Perbaikan', 'tindakanPerbaikan', 'tindakan_perbaikan'],
             tindakanPencegahan: ['Tindakan_Pencegahan', 'tindakanPencegahan', 'tindakan_pencegahan'],
             tglSelesai: ['Tgl_Selesai', 'tglSelesai', 'tgl_selesai'],
             hasilVerifikasi: ['Hasil_Verifikasi', 'hasilVerifikasi', 'hasil_verifikasi'],
             verifikator: ['Verifikator', 'verifikator'],
             tglVerifikasi: ['Tgl_Verifikasi', 'tglVerifikasi', 'tgl_verifikasi'],
-            catatanTL: ['Catatan_TL', 'catatanTL', 'catatan_tl']
+            catatanTL: ['Catatan_TL', 'catatanTL', 'catatan_tl'],
+            updatedBy: ['Updated_By', 'updatedBy', 'updated_by'],
+            updatedAt: ['Updated_At', 'updatedAt', 'updated_at']
         };
         
         const result = {};
@@ -220,22 +219,6 @@ export class TemuanTindakLanjutPage {
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-12">
-                                <div class="info-item mb-sm">
-                                    <label class="info-label">Bukti Objektif</label>
-                                    <div class="info-value" style="background: #f8fafc; padding: 12px; border-radius: var(--radius-md);">
-                                        ${this.escapeHtml(temuan.buktiObjektif || '-')}
-                                    </div>
-                                </div>
-                            </div>
-                            ${temuan.pihakTerkait ? `
-                            <div class="col-12">
-                                <div class="info-item mb-sm">
-                                    <label class="info-label">Pihak Terkait</label>
-                                    <div class="info-value">${this.escapeHtml(temuan.pihakTerkait)}</div>
-                                </div>
-                            </div>
-                            ` : ''}
                         </div>
                     </div>
 
@@ -270,12 +253,6 @@ export class TemuanTindakLanjutPage {
                                         ${this.formatDate(temuan.targetSelesai)}
                                         ${this.isOverdue(temuan.targetSelesai) && temuan.status !== 'Closed' && temuan.status !== 'Verified' ? ' <span class="badge-status danger">Overdue</span>' : ''}
                                     </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="info-item mb-sm">
-                                    <label class="info-label">Penanggung Jawab</label>
-                                    <div class="info-value"><strong>${this.escapeHtml(temuan.penanggungJawab || '-')}</strong></div>
                                 </div>
                             </div>
                         </div>
@@ -450,12 +427,6 @@ export class TemuanTindakLanjutPage {
                     <label class="info-label">Target Selesai</label>
                     <div class="info-value">${this.formatDate(temuan.targetSelesai)}</div>
                 </div>
-                ${temuan.penanggungJawab ? `
-                <div class="info-item mb-sm">
-                    <label class="info-label">Penanggung Jawab</label>
-                    <div class="info-value">${this.escapeHtml(temuan.penanggungJawab)}</div>
-                </div>
-                ` : ''}
                 <p style="color: var(--text-light); font-size: var(--fs-sm); margin-top: var(--space-sm);">
                     <i class="bi bi-lock"></i> Anda tidak memiliki akses untuk mengedit temuan ini.
                 </p>
@@ -469,11 +440,13 @@ export class TemuanTindakLanjutPage {
         
         if (user.role === 'hse' || user.role === 'top_management') return true;
         
+        // Department user yang membuat temuan
         if (this.temuanData && this.temuanData.createdBy === (user.username || user.name) &&
             (this.temuanData.status === 'Open' || this.temuanData.status === 'In Progress')) {
             return true;
         }
         
+        // Department user yang sama dengan department temuan
         if (this.temuanData && this.temuanData.department === user.department &&
             (this.temuanData.status === 'Open' || this.temuanData.status === 'In Progress')) {
             return true;
@@ -501,8 +474,9 @@ export class TemuanTindakLanjutPage {
             data[key] = value;
         });
         
-        if (!data.tindakanPerbaikan) {
-            toast('Tindakan perbaikan harus diisi', 'error');
+        // Validasi: tindakan perbaikan harus diisi jika status bukan Open
+        if (data.status !== 'Open' && !data.tindakanPerbaikan) {
+            toast('Tindakan perbaikan harus diisi untuk status selain Open', 'warning');
             return;
         }
         
@@ -513,7 +487,7 @@ export class TemuanTindakLanjutPage {
                 temuanId: data.temuanId,
                 rowIndex: data.rowIndex,
                 status: data.status,
-                tindakanPerbaikan: data.tindakanPerbaikan,
+                tindakanPerbaikan: data.tindakanPerbaikan || '',
                 tindakanPencegahan: data.tindakanPencegahan || '',
                 tglSelesai: data.tglSelesai || '',
                 catatanTL: data.catatanTL || '',
@@ -526,12 +500,16 @@ export class TemuanTindakLanjutPage {
             if (result.status === 'success') {
                 toast('Tindak lanjut berhasil disimpan!', 'success');
                 
+                // Update local data
                 this.temuanData.status = data.status;
                 this.temuanData.tindakanPerbaikan = data.tindakanPerbaikan;
                 this.temuanData.tindakanPencegahan = data.tindakanPencegahan;
                 this.temuanData.tglSelesai = data.tglSelesai;
                 this.temuanData.catatanTL = data.catatanTL;
+                this.temuanData.updatedBy = payload.updatedBy;
+                this.temuanData.updatedAt = payload.updatedAt;
                 
+                // Re-render halaman
                 const mainContent = document.getElementById('mainContent');
                 if (mainContent) {
                     mainContent.innerHTML = this.renderHTML();

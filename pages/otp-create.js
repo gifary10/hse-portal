@@ -1,3 +1,7 @@
+// pages/otp-create.js
+// OTP Create/Edit Page - Support multiple programs from IADL
+// Mendukung mode: create (default) dan edit (untuk revision requested)
+
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -11,11 +15,25 @@ export class OTPCreatePage {
         this.isEditMode = false;
         this.editOtpId = null;
         this.editOtpData = null;
+        
+        // Data referensi dari master
         this.kpiList = [];
         this.templateList = [];
         this.iadlList = [];
+        
+        // Selected values
+        this.selectedTemplate = null;
+        this.selectedKPI = null;
+        
+        // MULTIPLE PROGRAMS
+        this.selectedPrograms = []; // Array of program objects: { programCode, hazardDesc, dampak, programControl, activity }
+        this.programCounter = 0;
     }
 
+    // ============================================
+    // FETCH REFERENCE DATA
+    // ============================================
+    
     async fetchReferenceData(action) {
         const webAppUrl = getWebAppUrl();
         
@@ -72,6 +90,10 @@ export class OTPCreatePage {
             throw error;
         }
     }
+
+    // ============================================
+    // LOAD EDIT DATA
+    // ============================================
     
     async loadEditData(otpId) {
         const cachedEditData = sessionStorage.getItem('editOTPData');
@@ -80,6 +102,7 @@ export class OTPCreatePage {
                 const parsed = JSON.parse(cachedEditData);
                 if (parsed.otpId === otpId) {
                     this.editOtpData = parsed;
+                    this.parseProgramsFromEditData(parsed);
                     sessionStorage.removeItem('editOTPData');
                     return;
                 }
@@ -110,6 +133,7 @@ export class OTPCreatePage {
                 );
                 if (found) {
                     this.editOtpData = this.formatOTPDataForEdit(found);
+                    this.parseProgramsFromEditData(this.editOtpData);
                 } else {
                     throw new Error('OTP tidak ditemukan');
                 }
@@ -117,6 +141,37 @@ export class OTPCreatePage {
         } catch (error) {
             console.error('Failed to load edit data:', error);
             throw error;
+        }
+    }
+
+    parseProgramsFromEditData(data) {
+        this.selectedPrograms = [];
+        
+        const programCodes = (data.programCode || '').split('|').filter(p => p && p.trim());
+        const hazardDescs = (data.hazardDesc || '').split('|').filter(p => p && p.trim());
+        const dampaks = (data.dampak || '').split('|').filter(p => p && p.trim());
+        const programControls = (data.programControl || '').split('|').filter(p => p && p.trim());
+        const activities = (data.activity || '').split('|').filter(p => p && p.trim());
+        
+        const maxLength = Math.max(
+            programCodes.length, hazardDescs.length, dampaks.length,
+            programControls.length, activities.length, 1
+        );
+        
+        for (let i = 0; i < maxLength; i++) {
+            if (i === 0 && programCodes.length === 0 && hazardDescs.length === 0) {
+                this.addEmptyProgram();
+                return;
+            }
+            
+            this.selectedPrograms.push({
+                programCode: programCodes[i] || '',
+                hazardDesc: hazardDescs[i] || '',
+                dampak: dampaks[i] || '',
+                programControl: programControls[i] || '',
+                activity: activities[i] || '',
+                id: Date.now() + this.programCounter++
+            });
         }
     }
 
@@ -132,10 +187,11 @@ export class OTPCreatePage {
             uom: ['UOM', 'uom'],
             polarity: ['Polarity', 'polarity'],
             formula: ['Formula', 'formula'],
-            programCode: ['Program_Code', 'programCode'],
-            hazardDesc: ['Hazard_Description', 'hazardDesc'],
-            programControl: ['Program_Control', 'programControl'],
-            activity: ['Activity', 'activity'],
+            programCode: ['Program_Code', 'programCode', 'Program_Codes'],
+            hazardDesc: ['Hazard_Description', 'hazardDesc', 'Hazard_Descriptions'],
+            programControl: ['Program_Control', 'programControl', 'Program_Controls', 'Deskripsi_Pengendalian'],
+            activity: ['Activity', 'activity', 'Activities'],
+            dampak: ['Dampak', 'dampak'],
             target: ['Target', 'target'],
             timeline: ['Timeline', 'timeline'],
             owner: ['Owner', 'owner'],
@@ -160,9 +216,219 @@ export class OTPCreatePage {
             }
             result[field] = value || '';
         }
+        
         result._rowIndex = item.rowIndex || null;
         return result;
     }
+
+    // ============================================
+    // MULTIPLE PROGRAM HELPERS
+    // ============================================
+    
+    addEmptyProgram() {
+        this.selectedPrograms.push({
+            programCode: '',
+            hazardDesc: '',
+            dampak: '',
+            programControl: '',
+            activity: '',
+            id: Date.now() + this.programCounter++
+        });
+    }
+
+    removeProgram(index) {
+        if (this.selectedPrograms.length > 1) {
+            this.selectedPrograms.splice(index, 1);
+            this.updateProgramsUI();
+        } else {
+            toast('Minimal satu program harus dipilih', 'warning');
+        }
+    }
+
+    updateProgramsUI() {
+        const container = document.getElementById('otpProgramsContainer');
+        if (!container) return;
+        
+        container.innerHTML = this.renderProgramsList();
+        this.attachProgramEvents();
+    }
+
+    renderProgramsList() {
+        if (this.selectedPrograms.length === 0) {
+            this.addEmptyProgram();
+        }
+        
+        return this.selectedPrograms.map((program, idx) => `
+            <div class="program-item mb-md" style="padding: var(--space-md); background: #f8fafc; border-radius: var(--radius-md); border-left: 3px solid var(--primary); position: relative;" data-program-index="${idx}">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md);">
+                    <h4 style="font-size: var(--fs-sm); color: var(--primary); margin: 0;">
+                        <i class="bi bi-file-earmark-text"></i> Program ${idx + 1}
+                    </h4>
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-program-btn" data-index="${idx}" style="padding: 2px 8px;">
+                        <i class="bi bi-trash"></i> Hapus
+                    </button>
+                </div>
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="form-group-custom">
+                            <label>Deskripsi Hazard <span style="color: var(--danger);">*</span></label>
+                            <select name="programCode_${idx}" class="form-select program-select" data-index="${idx}" required>
+                                <option value="">Pilih Deskripsi Hazard</option>
+                                ${this.getFilteredIADLOptions(program.programCode)}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group-custom">
+                            <label>Dampak (auto)</label>
+                            <input type="text" class="form-control program-dampak" value="${this.escapeHtml(program.dampak)}" readonly style="background: #f0fdf4;">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group-custom">
+                            <label>Deskripsi Pengendalian (auto)</label>
+                            <input type="text" class="form-control program-control" value="${this.escapeHtml(program.programControl)}" readonly style="background: #f0fdf4;">
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="form-group-custom">
+                            <label>Aktivitas Terkait (auto)</label>
+                            <input type="text" class="form-control program-activity" value="${this.escapeHtml(program.activity)}" readonly style="background: #f0fdf4;">
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" name="program_id_${idx}" value="${program.id}">
+            </div>
+        `).join('');
+    }
+
+    getFilteredIADLOptions(selectedValue) {
+        const user = this.state.currentUser || {};
+        const userDept = user.department || '';
+        
+        let filtered = this.iadlList;
+        if (userDept) {
+            filtered = filtered.filter(i => 
+                (i.Departemen || i.departemen) === userDept
+            );
+        }
+        
+        let options = '';
+        for (const i of filtered) {
+            const hazardDesc = i['Deskripsi Hazard'] || i.deskripsiAspek || i.deskripsi_hazard || '';
+            const programCode = i['No Hazard'] || i.noHazard || i.no_hazard || i.id || '';
+            const dampak = i['Dampak'] || i.dampak || '';
+            const deskripsiPengendalian = i['Deskripsi Pengendalian'] || i.deskripsiPengendalian || i.deskripsi_pengendalian || '';
+            const activity = i['Aktifitas'] || i.aktivitas || i.Aktivitas || '';
+            
+            const isSelected = selectedValue === programCode;
+            const selectedAttr = isSelected ? 'selected' : '';
+            
+            options += `
+                <option value="${this.escapeHtml(programCode)}"
+                        data-hazard="${this.escapeHtml(hazardDesc)}"
+                        data-dampak="${this.escapeHtml(dampak)}"
+                        data-control="${this.escapeHtml(deskripsiPengendalian)}"
+                        data-activity="${this.escapeHtml(activity)}"
+                        ${selectedAttr}>
+                    ${this.escapeHtml(hazardDesc.substring(0, 80))}${hazardDesc.length > 80 ? '...' : ''}
+                </option>
+            `;
+        }
+        return options;
+    }
+
+    attachProgramEvents() {
+        const programSelects = document.querySelectorAll('.program-select');
+        programSelects.forEach(select => {
+            const newSelect = select.cloneNode(true);
+            select.parentNode.replaceChild(newSelect, select);
+            
+            newSelect.addEventListener('change', (e) => {
+                const idx = parseInt(newSelect.dataset.index);
+                const selectedOption = newSelect.options[newSelect.selectedIndex];
+                const programItem = this.selectedPrograms[idx];
+                
+                if (selectedOption && selectedOption.value) {
+                    programItem.programCode = selectedOption.value;
+                    programItem.hazardDesc = selectedOption.dataset.hazard || '';
+                    programItem.dampak = selectedOption.dataset.dampak || '';
+                    programItem.programControl = selectedOption.dataset.control || '';
+                    programItem.activity = selectedOption.dataset.activity || '';
+                    
+                    const programDiv = newSelect.closest('.program-item');
+                    if (programDiv) {
+                        const dampakInput = programDiv.querySelector('.program-dampak');
+                        const controlInput = programDiv.querySelector('.program-control');
+                        const activityInput = programDiv.querySelector('.program-activity');
+                        
+                        if (dampakInput) dampakInput.value = programItem.dampak;
+                        if (controlInput) controlInput.value = programItem.programControl;
+                        if (activityInput) activityInput.value = programItem.activity;
+                    }
+                }
+            });
+        });
+        
+        const removeBtns = document.querySelectorAll('.remove-program-btn');
+        removeBtns.forEach(btn => {
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            
+            newBtn.addEventListener('click', (e) => {
+                const idx = parseInt(newBtn.dataset.index);
+                this.removeProgram(idx);
+            });
+        });
+    }
+
+    // ============================================
+    // COLLECT PROGRAMS DATA FOR SUBMIT
+    // ============================================
+    
+    collectProgramsData() {
+        const programCodes = [];
+        const hazardDescs = [];
+        const dampaks = [];
+        const programControls = [];
+        const activities = [];
+        
+        for (const program of this.selectedPrograms) {
+            if (program.programCode) {
+                programCodes.push(program.programCode);
+                hazardDescs.push(program.hazardDesc || '');
+                dampaks.push(program.dampak || '');
+                programControls.push(program.programControl || '');
+                activities.push(program.activity || '');
+            }
+        }
+        
+        // If no valid program, add empty to avoid errors
+        if (programCodes.length === 0 && this.selectedPrograms.length > 0 && this.selectedPrograms[0].programCode === '') {
+            programCodes.push('');
+            hazardDescs.push('');
+            dampaks.push('');
+            programControls.push('');
+            activities.push('');
+        }
+        
+        return {
+            programCode: programCodes.join('|'),
+            hazardDesc: hazardDescs.join('|'),
+            dampak: dampaks.join('|'),
+            programControl: programControls.join('|'),
+            activity: activities.join('|'),
+            programCount: programCodes.filter(c => c).length
+        };
+    }
+
+    // ============================================
+    // RENDER
+    // ============================================
     
     async render(page, params = {}) {
         this.isEditMode = params.mode === 'edit' || 
@@ -176,6 +442,9 @@ export class OTPCreatePage {
             
             if (this.isEditMode && this.editOtpId) {
                 await this.loadEditData(this.editOtpId);
+            } else {
+                this.selectedPrograms = [];
+                this.addEmptyProgram();
             }
             
             this.hideLoading();
@@ -197,9 +466,6 @@ export class OTPCreatePage {
         );
         const filteredTemplates = this.templateList.filter(t => 
             !userDept || (t.Department || t.department) === userDept
-        );
-        const filteredIADL = this.iadlList.filter(i => 
-            !userDept || (i.Departemen || i.departemen) === userDept
         );
         
         const editData = isEdit ? this.editOtpData : null;
@@ -247,8 +513,8 @@ export class OTPCreatePage {
                         <strong style="color: var(--text);">${isEdit ? 'Form Edit OTP' : 'Form Input OTP'}</strong>
                         <p style="margin: 4px 0 0; color: var(--text-light); font-size: var(--fs-sm);">
                             ${isEdit ? 
-                                'Edit OTP sesuai catatan revisi, lalu submit ulang untuk approval.' : 
-                                'Lengkapi form di bawah untuk membuat OTP baru. Pilih Objective Template, KPI, dan Program dari IADL yang sudah tersedia.'
+                                'Edit OTP sesuai catatan revisi. Anda dapat menambah/menghapus program.' : 
+                                'Lengkapi form di bawah untuk membuat OTP baru. Anda dapat memilih lebih dari satu program dari IADL.'
                             }
                         </p>
                     </div>
@@ -309,7 +575,6 @@ export class OTPCreatePage {
                                             <option value="${this.escapeHtml(tCode)}"
                                                     data-objective="${this.escapeHtml(t.Objective || t.objective || '')}"
                                                     data-kpi="${this.escapeHtml(t.Related_KPI || t.relatedKPI || t.KPI_Code || '')}"
-                                                    data-program="${this.escapeHtml(t.Suggested_Program || t.suggestedProgram || '')}"
                                                     ${isSelected ? 'selected' : ''}>
                                                 ${this.escapeHtml(tCode)} - ${this.escapeHtml((t.Template_Name || t.templateName || '').substring(0, 50))}
                                             </option>
@@ -400,59 +665,22 @@ export class OTPCreatePage {
                     </div>
                 </div>
 
-                <!-- SELECT PROGRAM (from IADL) -->
+                <!-- MULTIPLE PROGRAMS SECTION -->
                 <div class="app-card mb-md">
                     <div class="card-header">
-                        <h3 class="card-title"><i class="bi bi-file-earmark-text"></i> Program (Referensi IADL)</h3>
-                        <span class="badge-status warning">Dari IADL</span>
+                        <h3 class="card-title"><i class="bi bi-files"></i> Program (Referensi IADL)</h3>
+                        <span class="badge-status warning">Dari IADL - Bisa pilih lebih dari satu</span>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group-custom">
-                                <label>Program dari IADL <span style="color: var(--danger);">*</span></label>
-                                <select name="programCode" id="otpProgramSelect" class="form-select" required>
-                                    <option value="">Pilih Program (dari IADL)</option>
-                                    ${filteredIADL.map(i => {
-                                        const pCode = i['No Hazard'] || i.noHazard || i.no_hazard || i.id || '';
-                                        const isSelected = isEdit && editData.programCode === pCode;
-                                        return `
-                                            <option value="${this.escapeHtml(pCode)}"
-                                                    data-hazard="${this.escapeHtml(i['Deskripsi Hazard'] || i.deskripsiAspek || i.deskripsi_hazard || '')}"
-                                                    data-control="${this.escapeHtml(i['Pengendalian Risiko'] || i.pengendalianDampak || i.pengendalian_risiko || '')}"
-                                                    data-activity="${this.escapeHtml(i.Aktifitas || i.aktivitas || i.Aktivitas || '')}"
-                                                    ${isSelected ? 'selected' : ''}>
-                                                ${this.escapeHtml(pCode)} - ${this.escapeHtml((i['Pengendalian Risiko'] || i.pengendalianDampak || '').substring(0, 60))}
-                                            </option>
-                                        `;
-                                    }).join('')}
-                                </select>
-                                <small class="text-muted">Pilih program pengendalian dari data IADL yang tersedia</small>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group-custom">
-                                <label>Deskripsi Hazard</label>
-                                <textarea id="otpHazardDesc" class="form-control" rows="2" readonly 
-                                          style="background: #f8fafc; font-size: var(--fs-sm);">${getEditValue('hazardDesc')}</textarea>
-                            </div>
-                        </div>
+                    
+                    <div id="otpProgramsContainer">
+                        ${this.renderProgramsList()}
                     </div>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group-custom">
-                                <label>Program Pengendalian</label>
-                                <textarea id="otpProgramControl" class="form-control" rows="2" readonly 
-                                          style="background: #f8fafc; font-size: var(--fs-sm);">${getEditValue('programControl')}</textarea>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group-custom">
-                                <label>Aktivitas Terkait</label>
-                                <input type="text" id="otpActivity" class="form-control" readonly 
-                                       style="background: #f8fafc;"
-                                       value="${getEditValue('activity')}">
-                            </div>
-                        </div>
+                    
+                    <div class="mt-md" style="text-align: center;">
+                        <button type="button" class="btn btn-outline-primary" id="addProgramBtn">
+                            <i class="bi bi-plus-lg"></i> Tambah Program
+                        </button>
+                        <small class="text-muted d-block mt-sm">Anda dapat memilih lebih dari satu hazard untuk program ini</small>
                     </div>
                 </div>
 
@@ -513,7 +741,7 @@ export class OTPCreatePage {
                     </div>
                 </div>
 
-                <!-- Hidden field untuk edit mode -->
+                <!-- Hidden fields for edit mode -->
                 ${isEdit ? `<input type="hidden" name="editMode" value="true">
                            <input type="hidden" name="originalOtpId" value="${this.escapeHtml(editData?.otpId || '')}">
                            <input type="hidden" name="rowIndex" value="${editData?._rowIndex || ''}">` : ''}
@@ -531,7 +759,10 @@ export class OTPCreatePage {
         `;
     }
 
-  
+    // ============================================
+    // EVENT HANDLERS (SETUP AFTER RENDER)
+    // ============================================
+    
     setupEventListeners() {
         const templateSelect = document.getElementById('otpTemplateSelect');
         if (templateSelect) {
@@ -539,7 +770,6 @@ export class OTPCreatePage {
                 const selectedOption = e.target.options[e.target.selectedIndex];
                 const objective = selectedOption.dataset.objective || '';
                 const kpiCode = selectedOption.dataset.kpi || '';
-                const program = selectedOption.dataset.program || '';
                 
                 const objectiveField = document.getElementById('otpObjective');
                 if (objectiveField && !this.isEditMode) {
@@ -572,18 +802,23 @@ export class OTPCreatePage {
             });
         }
         
-        const programSelect = document.getElementById('otpProgramSelect');
-        if (programSelect) {
-            programSelect.addEventListener('change', (e) => {
-                const selectedOption = e.target.options[e.target.selectedIndex];
-                document.getElementById('otpHazardDesc').value = selectedOption.dataset.hazard || '';
-                document.getElementById('otpProgramControl').value = selectedOption.dataset.control || '';
-                document.getElementById('otpActivity').value = selectedOption.dataset.activity || '';
+        const addBtn = document.getElementById('addProgramBtn');
+        if (addBtn) {
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', () => {
+                this.addEmptyProgram();
+                this.updateProgramsUI();
             });
         }
+        
+        this.attachProgramEvents();
     }
 
-   
+    // ============================================
+    // SUBMIT ACTIONS
+    // ============================================
+    
     async submit(params, element) {
         if (this.isSubmitting) return;
         
@@ -596,16 +831,36 @@ export class OTPCreatePage {
         const formData = new FormData(form);
         const data = {};
         formData.forEach((value, key) => {
-            data[key] = value;
+            if (!key.startsWith('program_')) {
+                data[key] = value;
+            }
         });
         
-        if (!data.templateCode || !data.kpiCode || !data.programCode) {
-            toast('Mohon lengkapi semua field yang wajib diisi', 'error');
+        const programsData = this.collectProgramsData();
+        
+        if (programsData.programCount === 0) {
+            toast('Minimal satu program harus dipilih', 'warning');
             return;
         }
         
-        if (!data.target || !data.timeline || !data.weight || !data.owner) {
-            toast('Mohon lengkapi detail OTP', 'error');
+        if (!data.templateCode) {
+            toast('Silakan pilih Objective Template', 'warning');
+            return;
+        }
+        if (!data.kpiCode) {
+            toast('Silakan pilih KPI', 'warning');
+            return;
+        }
+        if (!data.target) {
+            toast('Target harus diisi', 'warning');
+            return;
+        }
+        if (!data.timeline) {
+            toast('Timeline harus dipilih', 'warning');
+            return;
+        }
+        if (!data.owner) {
+            toast('Owner / PIC harus diisi', 'warning');
             return;
         }
         
@@ -624,25 +879,20 @@ export class OTPCreatePage {
         
         try {
             const user = this.state.currentUser || {};
-
+            
             const kpiName = document.getElementById('otpKPIName')?.value || '';
             const kpiUOM = document.getElementById('otpKPIUOM')?.value || '';
             const kpiPolarity = document.getElementById('otpKPIPolarity')?.value || '';
             const kpiFormula = document.getElementById('otpKPIFormula')?.value || '';
-            const hazardDesc = document.getElementById('otpHazardDesc')?.value || '';
-            const programControl = document.getElementById('otpProgramControl')?.value || '';
-            const activity = document.getElementById('otpActivity')?.value || '';
             const objective = document.getElementById('otpObjective')?.value || '';
             
             const payload = {
                 ...data,
+                ...programsData,
                 kpiName: kpiName || data.kpiName || '',
                 uom: kpiUOM || data.uom || '',
                 polarity: kpiPolarity || data.polarity || '',
                 formula: kpiFormula || data.formula || '',
-                hazardDesc: hazardDesc || data.hazardDesc || '',
-                programControl: programControl || data.programControl || '',
-                activity: activity || data.activity || '',
                 objective: objective || data.objective || '',
                 department: user.department || '',
                 createdBy: user.username || user.name || '',
@@ -662,12 +912,6 @@ export class OTPCreatePage {
             
             if (result.status === 'success') {
                 toast(this.isEditMode ? 'Revisi OTP berhasil disubmit!' : 'OTP berhasil disubmit!', 'success');
-                form.reset();
-                ['otpObjective', 'otpKPIName', 'otpKPIUOM', 'otpKPIPolarity', 'otpKPIFormula',
-                 'otpHazardDesc', 'otpProgramControl', 'otpActivity'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.value = '';
-                });
                 
                 setTimeout(() => {
                     this.router.navigateTo('otp-history');
@@ -741,10 +985,17 @@ export class OTPCreatePage {
         }
     }
 
-   
+    // ============================================
+    // AFTER RENDER HOOK
+    // ============================================
+    
     afterRender() {
         this.setupEventListeners();
     }
+
+    // ============================================
+    // UTILITY METHODS
+    // ============================================
     
     escapeHtml(str) {
         if (!str) return '';

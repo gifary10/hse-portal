@@ -1,6 +1,7 @@
 // pages/master-template.js
 // Master Template Page - Referensi Objective Template untuk OTP
 // Hanya menampilkan data referensi, tidak ada input/edit
+// UPDATED: Filter otomatis berdasarkan departemen user untuk role department
 
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
@@ -20,6 +21,9 @@ export class MasterTemplatePage {
         this.totalData = 0;
         this.totalPages = 1;
         this.allData = [];
+        this.originalData = []; // Store original unfiltered data
+        this.userDepartment = '';
+        this.userRole = '';
     }
 
     async fetchFromSheets(action, params = {}) {
@@ -60,7 +64,9 @@ export class MasterTemplatePage {
             const result = await response.json();
             
             if (result.status === 'success' && result.data) {
-                this.allData = this.formatData(result.data);
+                this.originalData = this.formatData(result.data);
+                // Apply department filter based on user role
+                this.applyUserDepartmentFilter();
             }
             
             return result;
@@ -115,6 +121,27 @@ export class MasterTemplatePage {
         return data.map(item => this.formatItem(item));
     }
 
+    /**
+     * Apply department filter for department role users
+     * This ensures department users only see template data for their department
+     */
+    applyUserDepartmentFilter() {
+        const user = this.state.currentUser || {};
+        this.userRole = user.role || '';
+        this.userDepartment = user.department || '';
+        
+        if (this.userRole === 'department' && this.userDepartment) {
+            // Filter only data for user's department
+            this.allData = this.originalData.filter(item => 
+                item.department === this.userDepartment
+            );
+            console.log(`Filtered Master Template for department: ${this.userDepartment}, found ${this.allData.length} items`);
+        } else {
+            // For HSE or Top Management, show all data
+            this.allData = [...this.originalData];
+        }
+    }
+
     getUniqueDepartments() {
         const departments = new Set();
         this.allData.forEach(item => {
@@ -163,12 +190,15 @@ export class MasterTemplatePage {
         if (!this.isRefreshing) this.showLoading();
         
         try {
-            if (this.allData.length === 0) {
+            if (this.allData.length === 0 && this.originalData.length === 0) {
                 const result = await this.getAllTemplates();
                 if (result.status === 'error') {
                     this.hideLoading();
                     return this.renderError(result.message || 'Gagal memuat data');
                 }
+            } else if (this.originalData.length > 0 && this.allData.length === 0) {
+                // Re-apply filter if data exists but allData is empty
+                this.applyUserDepartmentFilter();
             }
             
             const filteredData = this.applyFilters();
@@ -197,6 +227,10 @@ export class MasterTemplatePage {
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const uniqueDepts = this.getUniqueDepartments();
         const uniqueTypes = this.getUniqueTypes();
+        const user = this.state.currentUser || {};
+        const isDepartmentRole = user.role === 'department';
+        const filterInfo = isDepartmentRole && this.userDepartment ? 
+            `<span class="badge-status info" style="margin-left: 8px;"><i class="bi bi-building"></i> Departemen: ${this.escapeHtml(this.userDepartment)}</span>` : '';
         
         return `
             <div class="page-header">
@@ -208,12 +242,27 @@ export class MasterTemplatePage {
                     <span class="badge-status info" style="margin-right: 8px;">
                         <i class="bi bi-info-circle"></i> Referensi
                     </span>
+                    ${filterInfo}
                     <button class="btn btn-outline-primary" id="refreshTemplateBtn" data-action="masterTemplate.refresh">
                         <i class="bi bi-arrow-repeat"></i> <span>Refresh</span>
                     </button>
                 </div>
             </div>
 
+            ${isDepartmentRole ? `
+            <div class="app-card app-card-info mb-md" style="background: #f0fdf4; border-left: 4px solid var(--success);">
+                <div style="display: flex; align-items: start; gap: 12px;">
+                    <i class="bi bi-building" style="color: var(--success); font-size: 1.2rem; margin-top: 2px;"></i>
+                    <div>
+                        <strong style="color: var(--text);">Filter Departemen</strong>
+                        <p style="margin: 4px 0 0; color: var(--text-light); font-size: var(--fs-sm);">
+                            Menampilkan data template objective untuk departemen <strong>${this.escapeHtml(this.userDepartment)}</strong>.
+                            ${this.allData.length === 0 ? 'Belum ada data template untuk departemen Anda.' : `Ditemukan ${this.allData.length} template.`}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            ` : `
             <div class="app-card app-card-info mb-md" style="background: #f0f9ff; border-left: 4px solid var(--info);">
                 <div style="display: flex; align-items: start; gap: 12px;">
                     <i class="bi bi-info-circle-fill" style="color: var(--info); font-size: 1.2rem; margin-top: 2px;"></i>
@@ -226,6 +275,7 @@ export class MasterTemplatePage {
                     </div>
                 </div>
             </div>
+            `}
 
             <div class="filter-section">
                 <div class="row">
@@ -240,7 +290,7 @@ export class MasterTemplatePage {
                     <div class="col-md-3">
                         <div class="form-group-custom">
                             <label><i class="bi bi-building"></i> Filter Departemen</label>
-                            <select id="filterDeptTemplateInput" class="form-select">
+                            <select id="filterDeptTemplateInput" class="form-select" ${isDepartmentRole ? 'disabled' : ''}>
                                 <option value="">Semua Departemen</option>
                                 ${uniqueDepts.map(dept => `
                                     <option value="${this.escapeHtml(dept)}" ${this.filterDept === dept ? 'selected' : ''}>
@@ -248,6 +298,7 @@ export class MasterTemplatePage {
                                     </option>
                                 `).join('')}
                             </select>
+                            ${isDepartmentRole ? '<small class="text-muted">Filter dibatasi sesuai departemen Anda</small>' : ''}
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -300,13 +351,19 @@ export class MasterTemplatePage {
     
     renderTable(data, startIndex) {
         if (data.length === 0) {
+            const user = this.state.currentUser || {};
+            const isDepartmentRole = user.role === 'department';
+            
             return `
                 <div class="empty-state">
                     <i class="bi bi-clipboard" style="font-size: 3rem; color: var(--text-muted);"></i>
                     <h3>Tidak ada template</h3>
-                    <p>${this.searchQuery || this.filterDept || this.filterType ? 
-                        'Tidak ada template yang sesuai dengan filter' : 
-                        'Data template objective belum tersedia'}</p>
+                    <p>${isDepartmentRole ? 
+                        'Belum ada data template objective untuk departemen Anda. Silakan hubungi administrator.' : 
+                        (this.searchQuery || this.filterDept || this.filterType ? 
+                            'Tidak ada template yang sesuai dengan filter' : 
+                            'Data template objective belum tersedia')}
+                    </p>
                     <button class="btn btn-primary mt-md" 
                             data-action="${(this.searchQuery || this.filterDept || this.filterType) ? 'masterTemplate.clearFilters' : 'masterTemplate.refresh'}">
                         <i class="bi ${(this.searchQuery || this.filterDept || this.filterType) ? 'bi-eraser' : 'bi-arrow-repeat'}"></i> 
@@ -416,6 +473,7 @@ export class MasterTemplatePage {
             refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <span>Memuat...</span>';
         }
         
+        this.originalData = [];
         this.allData = [];
         this.currentPage = 1;
         this.searchQuery = '';
@@ -452,7 +510,7 @@ export class MasterTemplatePage {
 
     async filterDepartment() {
         const el = document.getElementById('filterDeptTemplateInput');
-        if (el) { this.filterDept = el.value; this.currentPage = 1; await this.updateTableOnly(); }
+        if (el && !el.disabled) { this.filterDept = el.value; this.currentPage = 1; await this.updateTableOnly(); }
     }
 
     async filterType() {
@@ -535,7 +593,7 @@ export class MasterTemplatePage {
                     clearTimeout(timeout);
                     timeout = setTimeout(() => this.search(), 400);
                 });
-            } else if (id === 'filterDeptTemplateInput') {
+            } else if (id === 'filterDeptTemplateInput' && !newEl.disabled) {
                 newEl.addEventListener('change', () => this.filterDepartment());
             } else if (id === 'filterTypeTemplateInput') {
                 newEl.addEventListener('change', () => this.filterType());

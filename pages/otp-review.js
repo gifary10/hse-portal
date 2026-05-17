@@ -1,5 +1,5 @@
 // pages/otp-review.js
-// OTP Review Page - Menampilkan detail OTP dan memungkinkan review/approval
+// OTP Review Page - Menampilkan detail OTP (dengan multiple programs) dan memungkinkan review/approval
 
 import { toast, showModal, closeModal } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
@@ -19,7 +19,6 @@ export class OTPReviewPage {
     // ============================================
     
     async loadOTPData(otpId) {
-        // Coba ambil dari sessionStorage dulu
         const cachedData = sessionStorage.getItem('selectedOTP');
         if (cachedData) {
             try {
@@ -28,12 +27,9 @@ export class OTPReviewPage {
                     this.otpData = this.formatOTPData(parsed);
                     return;
                 }
-            } catch (e) {
-                // Ignore parse error
-            }
+            } catch (e) {}
         }
         
-        // Fetch dari Google Sheets
         const webAppUrl = getWebAppUrl();
         
         if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
@@ -80,10 +76,11 @@ export class OTPReviewPage {
             uom: ['UOM', 'uom'],
             polarity: ['Polarity', 'polarity'],
             formula: ['Formula', 'formula'],
-            programCode: ['Program_Code', 'programCode'],
-            hazardDesc: ['Hazard_Description', 'hazardDesc'],
-            programControl: ['Program_Control', 'programControl'],
-            activity: ['Activity', 'activity'],
+            programCode: ['Program_Code', 'programCode', 'Program_Codes'],
+            hazardDesc: ['Hazard_Description', 'hazardDesc', 'Hazard_Descriptions'],
+            programControl: ['Program_Control', 'programControl', 'Program_Controls'],
+            activity: ['Activity', 'activity', 'Activities'],
+            dampak: ['Dampak', 'dampak'],
             target: ['Target', 'target'],
             timeline: ['Timeline', 'timeline'],
             owner: ['Owner', 'owner'],
@@ -109,7 +106,41 @@ export class OTPReviewPage {
             result[field] = value || '';
         }
         result._rowIndex = item.rowIndex || null;
+        
+        // Parse multiple programs into array
+        result.programs = this.parseProgramsArray(result);
+        
         return result;
+    }
+
+    parseProgramsArray(otp) {
+        const programs = [];
+        
+        const programCodes = (otp.programCode || '').split('|').filter(p => p);
+        const hazardDescs = (otp.hazardDesc || '').split('|').filter(p => p);
+        const dampaks = (otp.dampak || '').split('|').filter(p => p);
+        const programControls = (otp.programControl || '').split('|').filter(p => p);
+        const activities = (otp.activity || '').split('|').filter(p => p);
+        
+        const maxLength = Math.max(
+            programCodes.length, hazardDescs.length, dampaks.length,
+            programControls.length, activities.length
+        );
+        
+        for (let i = 0; i < maxLength; i++) {
+            if (programCodes[i] || hazardDescs[i]) {
+                programs.push({
+                    programCode: programCodes[i] || '',
+                    hazardDesc: hazardDescs[i] || '',
+                    dampak: dampaks[i] || '',
+                    programControl: programControls[i] || '',
+                    activity: activities[i] || '',
+                    index: i + 1
+                });
+            }
+        }
+        
+        return programs;
     }
 
     // ============================================
@@ -187,7 +218,7 @@ export class OTPReviewPage {
                 </div>
             </div>
 
-            <!-- REVIEWER NOTES SECTION - DITAMPILKAN JIKA ADA -->
+            <!-- REVIEWER NOTES SECTION -->
             ${otp.reviewerNotes ? `
                 <div class="app-card mb-md" style="background: #fef9e7; border-left: 4px solid var(--warning);">
                     <div class="card-header">
@@ -307,26 +338,57 @@ export class OTPReviewPage {
                         </div>
                     </div>
 
-                    <!-- Program (IADL) -->
+                    <!-- MULTIPLE PROGRAMS SECTION (IADL) -->
                     <div class="app-card mb-md">
                         <div class="card-header">
-                            <h3 class="card-title"><i class="bi bi-file-earmark-text"></i> Program (IADL Reference)</h3>
+                            <h3 class="card-title"><i class="bi bi-files"></i> Program (IADL Reference)</h3>
+                            <span class="badge-status info">${otp.programs.length} Program</span>
                         </div>
-                        <div class="info-item mb-sm">
-                            <label class="info-label">Program Code</label>
-                            <div class="info-value"><code>${this.escapeHtml(otp.programCode || '-')}</code></div>
-                        </div>
-                        <div class="info-item mb-sm">
-                            <label class="info-label">Hazard Description</label>
-                            <div class="info-value">${this.escapeHtml(otp.hazardDesc || '-')}</div>
-                        </div>
-                        <div class="info-item mb-sm">
-                            <label class="info-label">Program Control</label>
-                            <div class="info-value" style="font-weight: 500;">${this.escapeHtml(otp.programControl || '-')}</div>
-                        </div>
-                        <div class="info-item mb-sm">
-                            <label class="info-label">Related Activity</label>
-                            <div class="info-value">${this.escapeHtml(otp.activity || '-')}</div>
+                        <div style="max-height: 500px; overflow-y: auto;">
+                            ${otp.programs.length > 0 ? otp.programs.map(prog => `
+                                <div class="program-card mb-md" style="padding: var(--space-md); background: #f8fafc; border-radius: var(--radius-md); border-left: 3px solid var(--primary);">
+                                    <h4 style="font-size: var(--fs-sm); color: var(--primary); margin-bottom: var(--space-sm);">
+                                        <i class="bi bi-file-earmark-text"></i> Program ${prog.index}
+                                    </h4>
+                                    <div class="row">
+                                        <div class="col-12">
+                                            <div class="info-item mb-sm">
+                                                <label class="info-label">Deskripsi Hazard</label>
+                                                <div class="info-value" style="font-weight: 500;">${this.escapeHtml(prog.hazardDesc || '-')}</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="info-item mb-sm">
+                                                <label class="info-label">Dampak</label>
+                                                <div class="info-value">${this.escapeHtml(prog.dampak || '-')}</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="info-item mb-sm">
+                                                <label class="info-label">Program Code</label>
+                                                <div class="info-value"><code>${this.escapeHtml(prog.programCode || '-')}</code></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-12">
+                                            <div class="info-item mb-sm">
+                                                <label class="info-label">Deskripsi Pengendalian</label>
+                                                <div class="info-value" style="font-weight: 500;">${this.escapeHtml(prog.programControl || '-')}</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-12">
+                                            <div class="info-item mb-sm">
+                                                <label class="info-label">Aktivitas Terkait</label>
+                                                <div class="info-value">${this.escapeHtml(prog.activity || '-')}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('') : `
+                                <div class="empty-state">
+                                    <i class="bi bi-files"></i>
+                                    <p>Tidak ada program yang dipilih</p>
+                                </div>
+                            `}
                         </div>
                     </div>
 
@@ -476,13 +538,7 @@ export class OTPReviewPage {
     canUserReview() {
         const user = this.state.currentUser;
         if (!user) return false;
-        
-        // Top management dan HSE bisa review semua
-        if (user.role === 'top_management' || user.role === 'hse') {
-            return true;
-        }
-        
-        return false;
+        return (user.role === 'top_management' || user.role === 'hse');
     }
 
     canUserEdit() {
@@ -491,9 +547,7 @@ export class OTPReviewPage {
         
         if (!user || !otp) return false;
         
-        // Hanya department user dan hanya jika status = Revision Requested
         if (user.role === 'department' && otp.status === 'Revision Requested') {
-            // Optional: cek apakah OTP milik department user tersebut
             if (otp.department === user.department) {
                 return true;
             }
@@ -509,10 +563,7 @@ export class OTPReviewPage {
             return;
         }
         
-        // Simpan data OTP yang akan diedit ke sessionStorage
         sessionStorage.setItem('editOTPData', JSON.stringify(otp));
-        
-        // Navigasi ke halaman create dengan mode edit
         this.router.navigateTo('otp-create', { mode: 'edit', otpId: otp.otpId });
     }
 
@@ -520,7 +571,6 @@ export class OTPReviewPage {
         const form = document.getElementById('otpReviewForm');
         const formData = new FormData(form);
         const notes = formData.get('reviewerNotes') || '';
-        
         await this.performReview('Approved', notes);
     }
 
@@ -579,7 +629,6 @@ export class OTPReviewPage {
         const otp = this.otpData;
         const user = this.state.currentUser;
         
-        // Tampilkan loading indicator
         const approveBtn = document.querySelector('[data-action="otpReview.approve"]');
         const rejectBtn = document.querySelector('[data-action="otpReview.reject"]');
         const revisionBtn = document.querySelector('[data-action="otpReview.requestRevision"]');
@@ -594,18 +643,14 @@ export class OTPReviewPage {
             if (result.status === 'success') {
                 toast(`OTP berhasil ${status === 'Approved' ? 'disetujui' : status === 'Rejected' ? 'ditolak' : 'direvisi'}!`, 'success');
                 
-                // Update local data
                 this.otpData.status = status;
                 this.otpData.reviewerNotes = notes;
                 this.otpData.reviewedBy = user.username || user.name || '';
                 this.otpData.reviewedDate = new Date().toISOString();
                 
-                // Re-render halaman
                 const mainContent = document.getElementById('mainContent');
                 if (mainContent) {
                     mainContent.innerHTML = this.renderHTML();
-                    
-                    // Trigger event listeners ulang
                     document.dispatchEvent(new CustomEvent('pageChanged', {
                         detail: { page: 'otp-review', user: this.state.currentUser }
                     }));
@@ -639,15 +684,6 @@ export class OTPReviewPage {
             url.searchParams.append('reviewedBy', user.username || user.name || '');
             url.searchParams.append('reviewedDate', new Date().toISOString());
             
-            console.log('Updating OTP status with params:', {
-                action: 'updateOTPStatus',
-                otpId: otpId,
-                status: status,
-                reviewerNotes: notes,
-                reviewedBy: user.username || user.name,
-                reviewedDate: new Date().toISOString()
-            });
-            
             const response = await fetch(url.toString(), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' }
@@ -659,10 +695,7 @@ export class OTPReviewPage {
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
             
-            const result = await response.json();
-            console.log('Update OTP status result:', result);
-            
-            return result;
+            return await response.json();
             
         } catch (error) {
             console.error('Update OTP status error:', error);

@@ -1,3 +1,4 @@
+// pages/auth.js
 import { toast, confirmModal } from '../ui/components.js';
 
 export class AuthPage {
@@ -6,7 +7,7 @@ export class AuthPage {
         this.db = db;
         this.router = router;
         this.usernames = [];
-        this.isLoggingOut = false;
+        this.isLoggingOut = false; // Flag untuk mencegah multiple logout
     }
 
     async fetchUsernames() {
@@ -21,14 +22,18 @@ export class AuthPage {
     }
 
     async render() {
+        // Fetch usernames for dropdown
         await this.fetchUsernames();
         
         return `
             <div class="login-container">
                 <div class="app-card">
                     <div class="text-center mb-xl">
-                        <h2><i class="bi bi-clipboard-check"></i> Sistem OTP</h2>
-                        <p class="text-muted">ISO 14001:2015</p>
+                        <h2>
+    <img src="logo.png" alt="Logo" class="sidebar-logo">
+    EMS Monokem
+</h2>
+                        <p class="text-muted">Environmental Management System</p>
                     </div>
                     <form data-action="auth.login">
                         <div class="form-group-custom">
@@ -61,6 +66,7 @@ export class AuthPage {
             return;
         }
         
+        // Show loading state
         const submitBtn = form.querySelector('button[type="submit"]');
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -72,8 +78,9 @@ export class AuthPage {
             
             if (result.success) {
                 this.state.setUser(result.user, result.sessionId);
-                toast('Login berhasil! Selamat datang, ' + result.user.name);
+                toast('Selamat datang, ' + result.user.name);
                 
+                // Redirect berdasarkan role
                 const role = result.user.role || 'department';
                 if (role === 'top_management') {
                     this.router.navigateTo('monitoring-exec');
@@ -102,40 +109,49 @@ export class AuthPage {
         }
     }
 
+    /**
+     * LOGOUT - Versi dengan modal sederhana (hanya tombol Batal dan Ya, Logout)
+     */
     async logout() {
+        // Cegah multiple logout
         if (this.isLoggingOut) {
             console.log('Logout already in progress, ignoring...');
             return;
         }
         
-        const hasUnsavedDrafts = this.checkUnsavedDrafts();
-        let confirmMessage = 'Apakah Anda yakin ingin logout?';
+        // Cek apakah ada data draft yang belum disimpan
+        const unsavedDrafts = this.getUnsavedDraftsList();
+        let confirmMessage = 'Apakah tetap ingin logout?';
         
-        if (hasUnsavedDrafts) {
-            confirmMessage = 'Anda memiliki data yang belum disimpan. Apakah tetap ingin logout? Data yang belum disimpan akan hilang.';
+        if (unsavedDrafts.length > 0) {
+            confirmMessage = `Apakah tetap ingin logout?`;
         }
         
         try {
-            const confirmed = await confirmModal(
-                'Konfirmasi Logout',
-                confirmMessage,
-                {
-                    confirmText: 'Ya, Logout',
-                    cancelText: 'Batal',
-                    confirmClass: 'btn-danger',
-                    dangerMode: true
-                }
+            // Tampilkan modal konfirmasi SEDERHANA
+            const confirmed = await this.showSimpleConfirmModal(
+                'Logout',
+                confirmMessage
             );
             
+            // Jika user membatalkan, hentikan proses
             if (!confirmed) {
                 return;
             }
             
-            this.isLoggingOut = true;            
-            this.showLogoutLoading();
-            await this.db.logout();
-            this.state.clearUser();
+            // Set flag agar tidak ada double logout
+            this.isLoggingOut = true;
             
+            // Tampilkan loading indicator di tombol logout (jika ada)
+            this.showLogoutLoading();
+            
+            // Step 1: Cleanup database session
+            await this.db.logout();
+            
+            // Step 2: Clear state (emit event akan memberitahu komponen lain)
+            await this.state.clearUser();
+            
+            // Step 3: Bersihkan sidebar dengan delay minimal agar DOM stabil
             const sidebarNav = document.getElementById('sidebarNav');
             if (sidebarNav) {
                 sidebarNav.style.transition = 'opacity 0.15s ease';
@@ -145,16 +161,21 @@ export class AuthPage {
                 sidebarNav.style.opacity = '1';
             }
             
+            // Step 4: Update user info di layout
             if (this.router.layout) {
                 this.router.layout.updateUserInfo();
             }
             
+            // Step 5: Hapus loading indicator
             this.hideLogoutLoading();
             
-             toast('Logout berhasil', 'success');
+            // Step 6: Tampilkan toast sukses
+            toast('Logout berhasil', 'success');
             
+            // Step 7: Beri sedikit delay agar toast sempat muncul
             await this.delay(300);
             
+            // Step 8: Navigasi ke halaman login
             await this.router.navigateTo('login');
             
         } catch (error) {
@@ -167,44 +188,173 @@ export class AuthPage {
     }
     
     /**
-     * Cek apakah ada data draft yang belum disimpan di sessionStorage
-     * @returns {boolean}
+     * Tampilkan modal konfirmasi sederhana (tanpa icon, tanpa fitur rumit)
+     * @param {string} title - Judul modal
+     * @param {string} message - Pesan konfirmasi
+     * @returns {Promise<boolean>} - Promise yang resolve dengan true jika confirm, false jika cancel
      */
-    checkUnsavedDrafts() {
+    showSimpleConfirmModal(title, message) {
+        return new Promise((resolve) => {
+            const modalElement = document.getElementById('mainModal');
+            const modalDialog = document.getElementById('mainModalDialog');
+            const modalContent = document.getElementById('mainModalContent');
+            
+            if (!modalElement || !modalDialog || !modalContent) {
+                console.error('Modal elements not found');
+                resolve(false);
+                return;
+            }
+            
+            // Set ukuran modal kecil
+            modalDialog.className = 'modal-dialog modal-sm';
+            
+            // Konten modal sederhana
+            modalContent.innerHTML = `
+                <div class="modal-header">
+                    <h3 class="modal-title">${title}</h3>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">${message}</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="simpleModalCancelBtn">
+                        Batal
+                    </button>
+                    <button type="button" class="btn btn-danger" id="simpleModalConfirmBtn">
+                        Ya, Logout
+                    </button>
+                </div>
+            `;
+            
+            const bsModal = new bootstrap.Modal(modalElement, {
+                backdrop: 'static',
+                keyboard: false
+            });
+            bsModal.show();
+            modalElement._bsModal = bsModal;
+            
+            let resolved = false;
+            
+            const cleanup = () => {
+                const confirmBtn = document.getElementById('simpleModalConfirmBtn');
+                const cancelBtn = document.getElementById('simpleModalCancelBtn');
+                if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+                if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+                if (modalElement) {
+                    modalElement.removeEventListener('hidden.bs.modal', onHidden);
+                }
+            };
+            
+            const onConfirm = () => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                
+                if (modalElement && modalElement._bsModal) {
+                    modalElement._bsModal.hide();
+                }
+                
+                // Tunggu modal benar-benar tertutup
+                const checkHidden = () => {
+                    if (!modalElement || !modalElement.classList.contains('show')) {
+                        resolve(true);
+                    } else {
+                        setTimeout(checkHidden, 50);
+                    }
+                };
+                setTimeout(checkHidden, 150);
+            };
+            
+            const onCancel = () => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                
+                if (modalElement && modalElement._bsModal) {
+                    modalElement._bsModal.hide();
+                }
+                
+                const checkHidden = () => {
+                    if (!modalElement || !modalElement.classList.contains('show')) {
+                        resolve(false);
+                    } else {
+                        setTimeout(checkHidden, 50);
+                    }
+                };
+                setTimeout(checkHidden, 150);
+            };
+            
+            const onHidden = () => {
+                if (!resolved) {
+                    resolved = true;
+                    cleanup();
+                    resolve(false);
+                }
+            };
+            
+            const confirmBtn = document.getElementById('simpleModalConfirmBtn');
+            const cancelBtn = document.getElementById('simpleModalCancelBtn');
+            
+            if (confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+            if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+            if (modalElement) modalElement.addEventListener('hidden.bs.modal', onHidden);
+        });
+    }
+    
+    /**
+     * Dapatkan daftar draft yang belum disimpan
+     * @returns {Array} - Array of draft names
+     */
+    getUnsavedDraftsList() {
+        const drafts = [];
         const draftKeys = [
-            'editOTPData',
-            'selectedOTP',
-            'selectedTemuan',
-            'otpFormDraft',
-            'temuanFormDraft',
-            'mrFormDraft',
-            'mdFormDraft'
+            { key: 'editOTPData', name: 'OTP yang sedang diedit' },
+            { key: 'selectedOTP', name: 'Data OTP' },
+            { key: 'selectedTemuan', name: 'Data temuan' },
+            { key: 'otpFormDraft', name: 'Draft OTP' },
+            { key: 'temuanFormDraft', name: 'Draft Temuan' },
+            { key: 'mrFormDraft', name: 'Draft Management Review' },
+            { key: 'mdFormDraft', name: 'Draft Management Decision' }
         ];
         
-        for (const key of draftKeys) {
+        for (const { key, name } of draftKeys) {
             const draft = sessionStorage.getItem(key);
             if (draft && draft !== '{}' && draft !== 'null') {
                 try {
                     const parsed = JSON.parse(draft);
                     if (parsed && Object.keys(parsed).length > 0) {
-                        return true;
+                        drafts.push(name);
                     }
                 } catch (e) {
                     if (draft && draft.length > 10) {
-                        return true;
+                        drafts.push(name);
                     }
                 }
             }
         }
         
-        return false;
+        return drafts;
     }
     
+    /**
+     * Cek apakah ada data draft yang belum disimpan di sessionStorage
+     * @returns {boolean}
+     */
+    checkUnsavedDrafts() {
+        return this.getUnsavedDraftsList().length > 0;
+    }
+    
+    /**
+     * Tampilkan loading indicator di tombol logout sidebar
+     */
     showLogoutLoading() {
+        // Cari tombol logout di sidebar
         const logoutBtn = document.querySelector('.nav-item[data-action="auth.logout"]');
         if (logoutBtn) {
             const originalIcon = logoutBtn.querySelector('.icon i');
             if (originalIcon) {
+                // Simpan icon asli untuk dikembalikan nanti
                 logoutBtn.dataset.originalIcon = originalIcon.className;
                 originalIcon.className = 'bi bi-hourglass-split spinner-border spinner-border-sm';
                 originalIcon.style.animationDuration = '0.6s';
@@ -213,7 +363,10 @@ export class AuthPage {
             logoutBtn.style.pointerEvents = 'none';
         }
     }
-
+    
+    /**
+     * Sembunyikan loading indicator di tombol logout sidebar
+     */
     hideLogoutLoading() {
         const logoutBtn = document.querySelector('.nav-item[data-action="auth.logout"]');
         if (logoutBtn) {

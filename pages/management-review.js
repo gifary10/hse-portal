@@ -15,7 +15,7 @@ export class ManagementReviewPage {
         this.searchQuery = '';
         this.filterStatus = '';
         this.filterYear = '';
-        // NOTE: filterDept dihapus karena tidak digunakan di applyFilters()
+        this.filterDept = '';
         this.isLoading = false;
         this.isRefreshing = false;
         this.totalData = 0;
@@ -301,6 +301,10 @@ export class ManagementReviewPage {
             });
         }
         
+        if (this.filterDept) {
+            filtered = filtered.filter(item => item.department === this.filterDept);
+        }
+        
         // Sort by review date descending
         filtered.sort((a, b) => {
             const dateA = a.reviewDate ? new Date(a.reviewDate) : new Date(0);
@@ -393,7 +397,7 @@ export class ManagementReviewPage {
                             </select>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <div class="form-group-custom">
                             <label><i class="bi bi-calendar"></i> Tahun</label>
                             <select id="filterYearMRInput" class="form-select">
@@ -404,7 +408,7 @@ export class ManagementReviewPage {
                             </select>
                         </div>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <div class="form-group-custom">
                             <label>Hasil</label>
                             <div class="mt-2">
@@ -906,6 +910,7 @@ export class ManagementReviewPage {
         
         const content = `
             <div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">
+                <!-- Status Banner -->
                 <div class="app-card mb-md" style="background: ${this.getStatusColor(review.status)}; border-left: 4px solid var(--${this.getStatusBadgeType(review.status)});">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <i class="bi ${review.status === 'Approved' ? 'bi-check-circle-fill' : review.status === 'Completed' ? 'bi-clipboard-check' : 'bi-pencil'}" 
@@ -917,6 +922,7 @@ export class ManagementReviewPage {
                     </div>
                 </div>
 
+                <!-- Basic Info -->
                 <div class="app-card mb-md">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-info-circle"></i> Informasi Review</h4>
                     <div class="row">
@@ -965,6 +971,7 @@ export class ManagementReviewPage {
                     </div>
                 </div>
 
+                <!-- Review Content -->
                 <div class="app-card mb-md">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-list-check"></i> Hasil Review</h4>
                     
@@ -1008,6 +1015,7 @@ export class ManagementReviewPage {
                     ` : ''}
                 </div>
 
+                <!-- Recommendations & Conclusion -->
                 <div class="app-card mb-md" style="background: #fffbeb;">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-lightbulb"></i> Rekomendasi & Kesimpulan</h4>
                     <div class="info-item mb-sm">

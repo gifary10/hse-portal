@@ -1,5 +1,6 @@
 // pages/iadl.js
 // IADL Page - Dengan Filter Pencarian, Filter Departemen, dan Loading State yang Baik
+// UPDATED: Filter otomatis berdasarkan departemen user untuk role department
 
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
@@ -18,6 +19,9 @@ export class IADLPage {
         this.totalData = 0;
         this.totalPages = 1;
         this.allData = [];
+        this.originalData = []; // Store original unfiltered data
+        this.userDepartment = '';
+        this.userRole = '';
     }
 
     // ============================================
@@ -30,11 +34,12 @@ export class IADLPage {
         if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
             console.warn('Google Sheets not configured, using memory cache');
             const cachedData = this.db.getIADLCache();
-            this.allData = this.formatData(cachedData);
+            this.originalData = this.formatData(cachedData);
+            this.applyUserDepartmentFilter();
             return {
                 status: 'local',
-                data: cachedData,
-                total: cachedData.length
+                data: this.allData,
+                total: this.allData.length
             };
         }
 
@@ -69,7 +74,8 @@ export class IADLPage {
             const result = await response.json();
             
             if (result.status === 'success' && result.data) {
-                this.allData = this.formatData(result.data);
+                this.originalData = this.formatData(result.data);
+                this.applyUserDepartmentFilter();
                 this.db.saveIADLCache(result.data);
             }
             
@@ -78,11 +84,12 @@ export class IADLPage {
         } catch (error) {
             console.error('Google Sheets fetch error:', error);
             const cachedData = this.db.getIADLCache();
-            this.allData = this.formatData(cachedData);
+            this.originalData = this.formatData(cachedData);
+            this.applyUserDepartmentFilter();
             return {
                 status: 'local',
-                data: cachedData,
-                total: cachedData.length,
+                data: this.allData,
+                total: this.allData.length,
                 message: error.message
             };
         }
@@ -138,6 +145,31 @@ export class IADLPage {
     }
 
     // ============================================
+    // DEPARTMENT FILTER (NEW)
+    // ============================================
+    
+    /**
+     * Apply department filter for department role users
+     * This ensures department users only see IADL data for their department
+     */
+    applyUserDepartmentFilter() {
+        const user = this.state.currentUser || {};
+        this.userRole = user.role || '';
+        this.userDepartment = user.department || '';
+        
+        if (this.userRole === 'department' && this.userDepartment) {
+            // Filter only data for user's department
+            this.allData = this.originalData.filter(item => 
+                item.departemen === this.userDepartment
+            );
+            console.log(`Filtered IADL for department: ${this.userDepartment}, found ${this.allData.length} items`);
+        } else {
+            // For HSE or Top Management, show all data
+            this.allData = [...this.originalData];
+        }
+    }
+
+    // ============================================
     // FILTER METHODS
     // ============================================
     
@@ -184,12 +216,15 @@ export class IADLPage {
         }
         
         try {
-            if (this.allData.length === 0) {
+            if (this.allData.length === 0 && this.originalData.length === 0) {
                 const result = await this.getAllIADL();
                 if (result.status === 'error') {
                     this.hideLoading();
                     return this.renderError(result.message || 'Gagal memuat data');
                 }
+            } else if (this.originalData.length > 0 && this.allData.length === 0) {
+                // Re-apply filter if data exists but allData is empty
+                this.applyUserDepartmentFilter();
             }
             
             const filteredData = this.applyFilters();
@@ -218,6 +253,10 @@ export class IADLPage {
     renderHTML(data) {
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const uniqueDepts = this.getUniqueDepartments();
+        const user = this.state.currentUser || {};
+        const isDepartmentRole = user.role === 'department';
+        const filterInfo = isDepartmentRole && this.userDepartment ? 
+            `<span class="badge-status info" style="margin-left: 8px;"><i class="bi bi-building"></i> Departemen: ${this.escapeHtml(this.userDepartment)}</span>` : '';
         
         return `
             <div class="page-header">
@@ -226,11 +265,27 @@ export class IADLPage {
                     <p class="breadcrumb">Home / <span>IADL Monokem</span></p>
                 </div>
                 <div class="d-flex gap-sm">
+                    ${filterInfo}
                     <button class="btn btn-outline-primary" id="refreshIADLBtn" data-action="iadl.refresh">
                         <i class="bi bi-arrow-repeat"></i> <span>Refresh</span>
                     </button>
                 </div>
             </div>
+
+            ${isDepartmentRole ? `
+            <div class="app-card app-card-info mb-md" style="background: #f0fdf4; border-left: 4px solid var(--success);">
+                <div style="display: flex; align-items: start; gap: 12px;">
+                    <i class="bi bi-building" style="color: var(--success); font-size: 1.2rem; margin-top: 2px;"></i>
+                    <div>
+                        <strong style="color: var(--text);">Filter Departemen</strong>
+                        <p style="margin: 4px 0 0; color: var(--text-light); font-size: var(--fs-sm);">
+                            Menampilkan data IADL untuk departemen <strong>${this.escapeHtml(this.userDepartment)}</strong>.
+                            ${this.allData.length === 0 ? 'Belum ada data IADL untuk departemen Anda.' : `Ditemukan ${this.allData.length} record.`}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
 
             <div class="filter-section">
                 <div class="row">
@@ -248,7 +303,7 @@ export class IADLPage {
                     <div class="col-md-4">
                         <div class="form-group-custom">
                             <label><i class="bi bi-building"></i> Filter Departemen</label>
-                            <select id="filterDeptInput" class="form-select">
+                            <select id="filterDeptInput" class="form-select" ${isDepartmentRole ? 'disabled' : ''}>
                                 <option value="">Semua Departemen</option>
                                 ${uniqueDepts.map(dept => `
                                     <option value="${this.escapeHtml(dept)}" ${this.filterDept === dept ? 'selected' : ''}>
@@ -256,6 +311,7 @@ export class IADLPage {
                                     </option>
                                 `).join('')}
                             </select>
+                            ${isDepartmentRole ? '<small class="text-muted">Filter dibatasi sesuai departemen Anda</small>' : ''}
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -296,14 +352,19 @@ export class IADLPage {
     
     renderTable(data, startIndex) {
         if (data.length === 0) {
+            const user = this.state.currentUser || {};
+            const isDepartmentRole = user.role === 'department';
+            
             return `
                 <div class="empty-state">
                     <i class="bi bi-inbox"></i>
                     <h3>Tidak ada data</h3>
                     <p>
-                        ${this.searchQuery || this.filterDept ? 
-                            'Tidak ada data yang sesuai dengan filter yang dipilih' : 
-                            'Data IADL tidak ditemukan di Google Sheets'}
+                        ${isDepartmentRole ? 
+                            'Belum ada data IADL untuk departemen Anda. Silakan hubungi administrator.' : 
+                            (this.searchQuery || this.filterDept ? 
+                                'Tidak ada data yang sesuai dengan filter yang dipilih' : 
+                                'Data IADL tidak ditemukan di Google Sheets')}
                     </p>
                     ${(this.searchQuery || this.filterDept) ? `
                         <button class="btn btn-primary mt-md" data-action="iadl.clearFilters">
@@ -440,6 +501,7 @@ export class IADLPage {
         }
         
         // Clear cache dan reload
+        this.originalData = [];
         this.allData = [];
         this.currentPage = 1;
         this.searchQuery = '';
@@ -450,7 +512,7 @@ export class IADLPage {
             const searchInput = document.getElementById('searchIADLInput');
             const filterInput = document.getElementById('filterDeptInput');
             if (searchInput) searchInput.value = '';
-            if (filterInput) filterInput.value = '';
+            if (filterInput && !filterInput.disabled) filterInput.value = '';
         }, 100);
         
         try {
@@ -485,7 +547,7 @@ export class IADLPage {
 
     async filterDepartment() {
         const filterInput = document.getElementById('filterDeptInput');
-        if (filterInput) {
+        if (filterInput && !filterInput.disabled) {
             this.filterDept = filterInput.value;
             this.currentPage = 1;
             await this.updateTableOnly();
@@ -501,7 +563,7 @@ export class IADLPage {
             const searchInput = document.getElementById('searchIADLInput');
             const filterInput = document.getElementById('filterDeptInput');
             if (searchInput) searchInput.value = '';
-            if (filterInput) filterInput.value = '';
+            if (filterInput && !filterInput.disabled) filterInput.value = '';
         }, 100);
         
         await this.updateTableOnly();
@@ -592,7 +654,7 @@ export class IADLPage {
         }
         
         const filterInput = document.getElementById('filterDeptInput');
-        if (filterInput) {
+        if (filterInput && !filterInput.disabled) {
             const newFilterInput = filterInput.cloneNode(true);
             filterInput.parentNode.replaceChild(newFilterInput, filterInput);
             

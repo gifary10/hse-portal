@@ -1,3 +1,7 @@
+// pages/temuan-input.js
+// Input Temuan Audit Internal Page
+// Form untuk menginput temuan audit internal
+
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -8,7 +12,10 @@ export class TemuanInputPage {
         this.router = router;
         this.isLoading = false;
         this.isSubmitting = false;
-
+        
+        // Data referensi
+        this.kpiList = [];
+        this.templateList = [];
         this.iadlList = [];
     }
 
@@ -46,8 +53,14 @@ export class TemuanInputPage {
 
     async loadReferenceData() {
         try {
-            // Hanya ambil IADL untuk mendapatkan daftar departemen
-            const iadlResult = await this.fetchReferenceData('getAll');
+            const [kpiResult, templateResult, iadlResult] = await Promise.all([
+                this.fetchReferenceData('getAllKPI'),
+                this.fetchReferenceData('getAllTemplates'),
+                this.fetchReferenceData('getAll')
+            ]);
+            
+            this.kpiList = kpiResult.data || [];
+            this.templateList = templateResult.data || [];
             this.iadlList = iadlResult.data || [];
             
         } catch (error) {
@@ -185,27 +198,11 @@ export class TemuanInputPage {
                                           placeholder="Deskripsikan temuan secara detail..."></textarea>
                             </div>
                         </div>
-                        <div class="col-12">
-                            <div class="form-group-custom">
-                                <label>Bukti Objektif <span style="color: var(--danger);">*</span></label>
-                                <textarea name="buktiObjektif" class="form-control" rows="3" required
-                                          placeholder="Sebutkan bukti-bukti yang mendukung temuan..."></textarea>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
                         <div class="col-md-6">
                             <div class="form-group-custom">
                                 <label>Lokasi Temuan</label>
                                 <input type="text" name="lokasi" class="form-control" 
                                        placeholder="Area/lokasi spesifik">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group-custom">
-                                <label>Pihak Terkait</label>
-                                <input type="text" name="pihakTerkait" class="form-control" 
-                                       placeholder="Nama/jabatan pihak yang terkait">
                             </div>
                         </div>
                     </div>
@@ -234,7 +231,7 @@ export class TemuanInputPage {
                     </div>
                 </div>
 
-                <!-- Rekomendasi & Tindakan -->
+                <!-- Rekomendasi & Target -->
                 <div class="app-card mb-md">
                     <div class="card-header">
                         <h3 class="card-title"><i class="bi bi-check2-square"></i> Rekomendasi & Target</h3>
@@ -251,13 +248,6 @@ export class TemuanInputPage {
                             <div class="form-group-custom">
                                 <label>Target Penyelesaian <span style="color: var(--danger);">*</span></label>
                                 <input type="date" name="targetSelesai" class="form-control" required>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group-custom">
-                                <label>Penanggung Jawab</label>
-                                <input type="text" name="penanggungJawab" class="form-control" 
-                                       placeholder="Nama PIC">
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -296,6 +286,11 @@ export class TemuanInputPage {
                 departments.add(item.Departemen || item.departemen);
             }
         });
+        this.kpiList.forEach(item => {
+            if (item.Department || item.department) {
+                departments.add(item.Department || item.department);
+            }
+        });
         return Array.from(departments).sort();
     }
 
@@ -314,10 +309,25 @@ export class TemuanInputPage {
             data[key] = value;
         });
         
-        // Validasi
-        if (!data.department || !data.kategoriTemuan || !data.klasifikasi || 
-            !data.uraianTemuan || !data.buktiObjektif || !data.targetSelesai) {
-            toast('Mohon lengkapi semua field yang wajib diisi', 'error');
+        // Validasi - field yang wajib
+        if (!data.department) {
+            toast('Silakan pilih department auditee', 'warning');
+            return;
+        }
+        if (!data.kategoriTemuan) {
+            toast('Silakan pilih kategori temuan', 'warning');
+            return;
+        }
+        if (!data.klasifikasi) {
+            toast('Silakan pilih klasifikasi temuan', 'warning');
+            return;
+        }
+        if (!data.uraianTemuan) {
+            toast('Uraian temuan harus diisi', 'warning');
+            return;
+        }
+        if (!data.targetSelesai) {
+            toast('Target penyelesaian harus diisi', 'warning');
             return;
         }
         
@@ -348,7 +358,6 @@ export class TemuanInputPage {
                 toast('Temuan berhasil disimpan!', 'success');
                 form.reset();
                 
-                // Redirect ke daftar temuan
                 setTimeout(() => {
                     this.router.navigateTo('temuan-daftar');
                 }, 1500);
