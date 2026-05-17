@@ -1,7 +1,7 @@
-// code.gs
+// Code.gs
 // Google Apps Script untuk mengambil data dari Google Sheet
 // Sheet ID: 1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI
-// 
+//
 // SEMUA SHEET HARUS SUDAH DIBUAT MANUAL:
 // Sheets: IADL, akses, MasterKPI, MasterTemplate, OTP, Temuan, ManagementReview, ManagementDecision
 
@@ -19,28 +19,12 @@ function handleRequest(e) {
   try {
     let result;
     switch(action) {
-      // ============================================
       // IADL ACTIONS
-      // ============================================
       case 'getAll':
         result = getAllIADLData();
         break;
-      case 'getPaginated':
-        const page = parseInt(e.parameter.page) || 1;
-        const pageSize = parseInt(e.parameter.pageSize) || 10;
-        let filters = {};
-        if (e.parameter.filters) {
-          filters = JSON.parse(e.parameter.filters);
-        }
-        result = getPaginatedIADLData(page, pageSize, filters);
-        break;
-      case 'getHeaders':
-        result = getIADLHeaders();
-        break;
       
-      // ============================================
       // USER/AUTH ACTIONS (Sheet: akses)
-      // ============================================
       case 'getUsers':
         result = getUsers();
         break;
@@ -53,23 +37,17 @@ function handleRequest(e) {
         result = loginUser(username, password);
         break;
       
-      // ============================================
       // MASTER KPI ACTIONS (Sheet: MasterKPI)
-      // ============================================
       case 'getAllKPI':
         result = getAllKPIData();
         break;
       
-      // ============================================
       // MASTER TEMPLATE ACTIONS (Sheet: MasterTemplate)
-      // ============================================
       case 'getAllTemplates':
         result = getAllTemplateData();
         break;
       
-      // ============================================
       // OTP ACTIONS (Sheet: OTP)
-      // ============================================
       case 'saveOTP':
         const otpData = JSON.parse(e.parameter.data || '{}');
         result = saveOTPData(otpData);
@@ -94,9 +72,7 @@ function handleRequest(e) {
         result = updateOTP(updateData);
         break;
       
-      // ============================================
-      // TEMUAN ACTIONS (Sheet: Temuan) - UPDATED
-      // ============================================
+      // TEMUAN ACTIONS (Sheet: Temuan)
       case 'saveTemuan':
         const temuanData = JSON.parse(e.parameter.data || '{}');
         result = saveTemuanData(temuanData);
@@ -113,9 +89,7 @@ function handleRequest(e) {
         result = updateTemuanTL(tlData);
         break;
       
-      // ============================================
       // MANAGEMENT REVIEW ACTIONS (Sheet: ManagementReview)
-      // ============================================
       case 'getAllManagementReview':
         result = getAllManagementReviewData();
         break;
@@ -123,16 +97,8 @@ function handleRequest(e) {
         const mrData = JSON.parse(e.parameter.data || '{}');
         result = saveManagementReviewData(mrData);
         break;
-      case 'updateMRStatus':
-        const mrId = e.parameter.mrId;
-        const mrStatus = e.parameter.status;
-        const mrNotes = e.parameter.notes || '';
-        result = updateMRStatus(mrId, mrStatus, mrNotes);
-        break;
       
-      // ============================================
       // MANAGEMENT DECISION ACTIONS (Sheet: ManagementDecision)
-      // ============================================
       case 'getAllManagementDecision':
         result = getAllManagementDecisionData();
         break;
@@ -264,7 +230,6 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
     return { status: 'error', message: `Data dengan ID "${idValue}" tidak ditemukan.` };
   }
   
-  // updates sekarang adalah object dengan key string (nama kolom) dan value
   for (const [fieldName, value] of Object.entries(updates)) {
     let colIndex = headers.findIndex(h => h === fieldName);
     if (colIndex !== -1 && value !== undefined && value !== null) {
@@ -281,44 +246,6 @@ function findAndUpdateRow(sheetName, idFieldNames, idValue, updates) {
 
 function getAllIADLData() {
   return readSheetData('IADL');
-}
-
-function getPaginatedIADLData(page, pageSize, filters) {
-  const allData = getAllIADLData();
-  if (allData.status === 'error') return allData;
-  
-  let filteredData = allData.data;
-  
-  if (filters && Object.keys(filters).length > 0) {
-    filteredData = allData.data.filter(item => {
-      for (const [key, value] of Object.entries(filters)) {
-        if (!value) continue;
-        const itemValue = item[key] || '';
-        if (!itemValue.toString().toLowerCase().includes(value.toLowerCase())) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-  
-  const total = filteredData.length;
-  const totalPages = Math.ceil(total / pageSize);
-  const startIndex = (page - 1) * pageSize;
-  const paginatedData = filteredData.slice(startIndex, startIndex + pageSize);
-  
-  return {
-    status: 'success',
-    data: paginatedData,
-    total: total,
-    page: page,
-    pageSize: pageSize,
-    totalPages: totalPages
-  };
-}
-
-function getIADLHeaders() {
-  return { status: 'success', headers: [] };
 }
 
 // ============================================
@@ -726,8 +653,7 @@ function updateOTP(data) {
 }
 
 // ============================================
-// TEMUAN FUNCTIONS (Sheet: Temuan) - UPDATED
-// (Dihapus: Klausul_ISO, Regulasi, Bukti_Objektif, Pihak_Terkait, Penanggung_Jawab)
+// TEMUAN FUNCTIONS (Sheet: Temuan)
 // ============================================
 
 function saveTemuanData(data) {
@@ -738,41 +664,39 @@ function saveTemuanData(data) {
   const rowNum = ((existingData.data?.length || 0) + 1).toString().padStart(3, '0');
   const temuanId = `TMP-${year}-${dept}-${rowNum}`;
   
-  // Baris data sesuai kolom sheet (30 kolom)
   const rowData = [
-    temuanId,                              // Temuan_ID
-    data.department || '',                 // Department
-    data.tanggalAudit || '',               // Tanggal_Audit
-    data.kategoriTemuan || '',             // Kategori_Temuan
-    data.klasifikasi || '',                // Klasifikasi
-    '',                                    // Klausul_ISO (tidak digunakan)
-    '',                                    // Regulasi (tidak digunakan)
-    data.uraianTemuan || '',               // Uraian_Temuan
-    '',                                    // Bukti_Objektif (tidak digunakan)
-    data.lokasi || '',                     // Lokasi
-    '',                                    // Pihak_Terkait (tidak digunakan)
-    data.akarMasalah || '',                // Akar_Masalah
-    data.dampak || '',                     // Dampak
-    data.rekomendasi || '',                // Rekomendasi
-    data.targetSelesai || '',              // Target_Selesai
-    '',                                    // Penanggung_Jawab (tidak digunakan)
-    data.prioritas || 'Sedang',            // Prioritas
-    data.status || 'Open',                 // Status
-    data.createdAt || new Date().toISOString(), // Created_At
-    data.createdBy || '',                  // Created_By
-    data.auditorDept || '',                // Auditor_Dept
-    '',                                    // Tindakan_Perbaikan
-    '',                                    // Tindakan_Pencegahan
-    '',                                    // Tgl_Selesai
-    '',                                    // Hasil_Verifikasi
-    '',                                    // Verifikator
-    '',                                    // Tgl_Verifikasi
-    '',                                    // Catatan_TL
-    data.createdBy || '',                  // Updated_By
-    data.createdAt || new Date().toISOString()  // Updated_At
+    temuanId,
+    data.department || '',
+    data.tanggalAudit || '',
+    data.kategoriTemuan || '',
+    data.klasifikasi || '',
+    '',
+    '',
+    data.uraianTemuan || '',
+    '',
+    data.lokasi || '',
+    '',
+    data.akarMasalah || '',
+    data.dampak || '',
+    data.rekomendasi || '',
+    data.targetSelesai || '',
+    '',
+    data.prioritas || 'Sedang',
+    data.status || 'Open',
+    data.createdAt || new Date().toISOString(),
+    data.createdBy || '',
+    data.auditorDept || '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    data.createdBy || '',
+    data.createdAt || new Date().toISOString()
   ];
   
-  // Pastikan sheet memiliki cukup kolom (minimal 30 kolom)
   const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
   const sheet = spreadsheet.getSheetByName('Temuan');
   if (sheet) {
@@ -786,7 +710,6 @@ function saveTemuanData(data) {
         'Auditor_Dept', 'Tindakan_Perbaikan', 'Tindakan_Pencegahan', 'Tgl_Selesai',
         'Hasil_Verifikasi', 'Verifikator', 'Tgl_Verifikasi', 'Catatan_TL', 'Updated_By', 'Updated_At'
       ];
-      // Tambahkan kolom jika kurang
       for (let i = lastCol; i < headers.length; i++) {
         sheet.getRange(1, i + 1).setValue(headers[i]);
       }
@@ -821,7 +744,6 @@ function getTemuanByDepartment(department) {
   return { status: 'success', data: filteredData, total: filteredData.length };
 }
 
-// ** DIPERBAIKI: updateTemuanTL sekarang menggunakan rowIndex (jika ada) atau pencarian ID dengan key string **
 function updateTemuanTL(data) {
   const sheetName = 'Temuan';
   const spreadsheet = SpreadsheetApp.openById('1KfXU_1IlDzcv5bF8PPG4Oe_wdhLUDwyqrGubYHKSqFI');
@@ -830,21 +752,16 @@ function updateTemuanTL(data) {
     return { status: 'error', message: `Sheet "${sheetName}" tidak ditemukan` };
   }
   
-  // Ambil header untuk mengetahui posisi kolom
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const getColIndex = (colName) => headers.findIndex(h => h === colName);
   
-  // Tentukan baris target
   let targetRow = -1;
   
-  // Prioritas: jika ada rowIndex yang valid (dari frontend)
   if (data.rowIndex && !isNaN(parseInt(data.rowIndex))) {
     targetRow = parseInt(data.rowIndex);
-    // Validasi minimal baris 2
     if (targetRow < 2) targetRow = -1;
   }
   
-  // Jika tidak ada rowIndex atau tidak valid, cari berdasarkan Temuan_ID
   if (targetRow === -1) {
     const idCol = getColIndex('Temuan_ID');
     if (idCol === -1) {
@@ -868,7 +785,6 @@ function updateTemuanTL(data) {
     return { status: 'error', message: `Temuan dengan ID ${data.temuanId} tidak ditemukan` };
   }
   
-  // Update kolom berdasarkan field yang dikirim
   if (data.status !== undefined && data.status !== '') {
     const idx = getColIndex('Status');
     if (idx !== -1) sheet.getRange(targetRow, idx + 1).setValue(data.status);
@@ -964,28 +880,6 @@ function saveManagementReviewData(data) {
     status: 'success', 
     message: 'Management Review berhasil disimpan',
     mrId: data.mrId
-  };
-}
-
-function updateMRStatus(mrId, status, notes) {
-  const updates = {};
-  if (status) updates['Status'] = status;
-  if (notes) updates['Notes'] = notes;
-  
-  const result = findAndUpdateRow(
-    'ManagementReview',
-    ['MR_ID', 'mrId', 'mr_id'],
-    mrId,
-    updates
-  );
-  
-  if (result.status === 'error') return result;
-  
-  return { 
-    status: 'success', 
-    message: 'Status Management Review berhasil diupdate menjadi ' + status,
-    mrId: mrId,
-    newStatus: status
   };
 }
 
