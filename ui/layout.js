@@ -1,9 +1,10 @@
+// ui/layout.js
 export class Layout {
     constructor(state, router) {
         this.state = state;
         this.router = router;
         router.layout = this;
-        this.isUpdatingSidebar = false;
+        this.isUpdatingSidebar = false; // Flag untuk mencegah multiple update
     }
 
     init() {
@@ -64,9 +65,10 @@ export class Layout {
         
         const user = this.state.currentUser;
         
+        // Update sidebar role - TAMPILKAN NAMA DEPARTEMEN untuk role department
         if (sidebarRole) {
             const roleMap = {
-                'department': 'Department',
+                'department': user.department || 'Department',
                 'hse': 'HSE Manager',
                 'top_management': 'Top Management'
             };
@@ -99,6 +101,10 @@ export class Layout {
         }
     }
 
+    /**
+     * Update sidebar dengan animasi yang halus
+     * Mencegah sidebar kosong tiba-tiba (blink)
+     */
     updateSidebar() {
         if (this.isUpdatingSidebar) return;
         this.isUpdatingSidebar = true;
@@ -141,7 +147,8 @@ export class Layout {
             </div>`;
         
         if (nav) {
-             this.fadeOutElement(nav, () => {
+            // Gunakan fade transition untuk menghindari blink
+            this.fadeOutElement(nav, () => {
                 nav.innerHTML = html;
                 this.fadeInElement(nav);
                 this.isUpdatingSidebar = false;
@@ -265,7 +272,11 @@ export class Layout {
         });
     }
     
-     resetSidebar() {
+    /**
+     * Reset sidebar ke keadaan awal (kosong)
+     * Digunakan saat logout untuk membersihkan menu
+     */
+    resetSidebar() {
         const nav = document.getElementById('sidebarNav');
         if (nav) {
             this.fadeOutElement(nav, () => {
