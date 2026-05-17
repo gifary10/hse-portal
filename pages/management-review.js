@@ -1,7 +1,4 @@
 // pages/management-review.js
-// Management Review Page - Form dan Tracking Management Review
-// Untuk HSE Manager dan Top Management
-
 import { toast, showModal, closeModal } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -22,15 +19,10 @@ export class ManagementReviewPage {
         this.totalPages = 1;
         this.allData = [];
         
-        // Data untuk form input
         this.otpSummary = [];
         this.temuanSummary = [];
     }
 
-    // ============================================
-    // API CALLS
-    // ============================================
-    
     async fetchFromSheets(action, params = {}) {
         const webAppUrl = getWebAppUrl();
         
@@ -129,37 +121,6 @@ export class ManagementReviewPage {
         }
     }
 
-    async updateManagementReviewStatus(mrId, status, notes) {
-        const webAppUrl = getWebAppUrl();
-        
-        if (!isGoogleSheetsEnabled() || !webAppUrl || webAppUrl.includes('YOUR_WEB_APP_ID')) {
-            return { status: 'error', message: 'Google Sheets not configured' };
-        }
-        
-        try {
-            const url = new URL(webAppUrl);
-            url.searchParams.append('action', 'updateMRStatus');
-            url.searchParams.append('mrId', mrId);
-            url.searchParams.append('status', status);
-            url.searchParams.append('notes', notes || '');
-            url.searchParams.append('updatedBy', this.state.currentUser?.username || '');
-            url.searchParams.append('updatedAt', new Date().toISOString());
-            
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            return await response.json();
-            
-        } catch (error) {
-            console.error('Update MR status error:', error);
-            return { status: 'error', message: error.message };
-        }
-    }
-
     // ============================================
     // DATA FORMATTING
     // ============================================
@@ -176,8 +137,6 @@ export class ManagementReviewPage {
             reviewType: ['Review_Type', 'reviewType', 'review_type', 'Tipe_Review'],
             chairman: ['Chairman', 'chairman', 'Ketua'],
             attendees: ['Attendees', 'attendees', 'Peserta'],
-            
-            // Input review
             auditResults: ['Audit_Results', 'auditResults', 'Hasil_Audit'],
             otpPerformance: ['OTP_Performance', 'otpPerformance', 'Kinerja_OTP'],
             environmentalPerformance: ['Environmental_Performance', 'environmentalPerformance', 'Kinerja_Lingkungan'],
@@ -187,7 +146,6 @@ export class ManagementReviewPage {
             improvementOpportunities: ['Improvement_Opportunities', 'improvementOpportunities', 'Peluang_Perbaikan'],
             recommendations: ['Recommendations', 'recommendations', 'Rekomendasi'],
             conclusion: ['Conclusion', 'conclusion', 'Kesimpulan'],
-            
             status: ['Status', 'status'],
             createdBy: ['Created_By', 'createdBy', 'created_by'],
             createdAt: ['Created_At', 'createdAt', 'created_at'],
@@ -305,7 +263,6 @@ export class ManagementReviewPage {
             filtered = filtered.filter(item => item.department === this.filterDept);
         }
         
-        // Sort by review date descending
         filtered.sort((a, b) => {
             const dateA = a.reviewDate ? new Date(a.reviewDate) : new Date(0);
             const dateB = b.reviewDate ? new Date(b.reviewDate) : new Date(0);
@@ -441,7 +398,6 @@ export class ManagementReviewPage {
                 ${this.totalPages > 1 ? this.renderPagination() : ''}
             </div>
 
-            <!-- Information Card -->
             <div class="app-card mt-md" style="background: #f0f9ff; border-left: 4px solid var(--info);">
                 <div style="display: flex; align-items: start; gap: 12px;">
                     <i class="bi bi-info-circle-fill" style="color: var(--info); font-size: 1.2rem; margin-top: 2px;"></i>
@@ -616,7 +572,6 @@ export class ManagementReviewPage {
         const content = `
             <div class="modal-body-scroll" style="max-height: 70vh; overflow-y: auto;">
                 <form data-action="managementReview.submitReview" id="mrCreateForm">
-                    <!-- Basic Info -->
                     <div class="app-card mb-md" style="background: #f8fafc;">
                         <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-info-circle"></i> Informasi Review</h4>
                         <div class="row">
@@ -682,7 +637,6 @@ export class ManagementReviewPage {
                         </div>
                     </div>
 
-                    <!-- Summary Data (Auto-filled) -->
                     <div class="app-card mb-md" style="background: #f0fdf4;">
                         <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-graph-up"></i> Data Summary (Auto)</h4>
                         <div class="row">
@@ -717,7 +671,6 @@ export class ManagementReviewPage {
                         </div>
                     </div>
 
-                    <!-- Review Inputs -->
                     <div class="app-card mb-md">
                         <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-pencil-square"></i> Hasil Review</h4>
                         
@@ -764,7 +717,6 @@ export class ManagementReviewPage {
                         </div>
                     </div>
 
-                    <!-- Recommendations & Conclusion -->
                     <div class="app-card mb-md" style="background: #fffbeb;">
                         <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-lightbulb"></i> Rekomendasi & Kesimpulan</h4>
                         
@@ -781,7 +733,6 @@ export class ManagementReviewPage {
                         </div>
                     </div>
 
-                    <!-- Submit Buttons -->
                     <div class="d-flex gap-sm" style="justify-content: flex-end;">
                         <button type="button" class="btn btn-secondary" data-action="modal.close">
                             <i class="bi bi-x-circle"></i> Batal
@@ -810,11 +761,8 @@ export class ManagementReviewPage {
         
         const formData = new FormData(form);
         const data = {};
-        formData.forEach((value, key) => {
-            data[key] = value;
-        });
+        formData.forEach((value, key) => { data[key] = value; });
         
-        // Validasi
         if (!data.reviewTitle || !data.period || !data.reviewDate || !data.chairman) {
             toast('Mohon lengkapi informasi dasar review', 'error');
             return;
@@ -827,7 +775,6 @@ export class ManagementReviewPage {
         
         try {
             const user = this.state.currentUser || {};
-            
             const year = data.period?.toString().substring(0, 4) || new Date().getFullYear();
             const rowNum = (this.allData.length + 1).toString().padStart(3, '0');
             const mrId = `MR-${year}-${rowNum}`;
@@ -862,13 +809,10 @@ export class ManagementReviewPage {
         
         const formData = new FormData(form);
         const data = {};
-        formData.forEach((value, key) => {
-            data[key] = value;
-        });
+        formData.forEach((value, key) => { data[key] = value; });
         
         try {
             const user = this.state.currentUser || {};
-            
             const year = data.period?.toString().substring(0, 4) || new Date().getFullYear();
             const rowNum = (this.allData.length + 1).toString().padStart(3, '0');
             const mrId = `MR-${year}-${rowNum}`;
@@ -910,7 +854,6 @@ export class ManagementReviewPage {
         
         const content = `
             <div style="max-height: 70vh; overflow-y: auto; padding-right: 8px;">
-                <!-- Status Banner -->
                 <div class="app-card mb-md" style="background: ${this.getStatusColor(review.status)}; border-left: 4px solid var(--${this.getStatusBadgeType(review.status)});">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <i class="bi ${review.status === 'Approved' ? 'bi-check-circle-fill' : review.status === 'Completed' ? 'bi-clipboard-check' : 'bi-pencil'}" 
@@ -922,7 +865,6 @@ export class ManagementReviewPage {
                     </div>
                 </div>
 
-                <!-- Basic Info -->
                 <div class="app-card mb-md">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-info-circle"></i> Informasi Review</h4>
                     <div class="row">
@@ -971,7 +913,6 @@ export class ManagementReviewPage {
                     </div>
                 </div>
 
-                <!-- Review Content -->
                 <div class="app-card mb-md">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-list-check"></i> Hasil Review</h4>
                     
@@ -1015,7 +956,6 @@ export class ManagementReviewPage {
                     ` : ''}
                 </div>
 
-                <!-- Recommendations & Conclusion -->
                 <div class="app-card mb-md" style="background: #fffbeb;">
                     <h4 style="margin-bottom: var(--space-md);"><i class="bi bi-lightbulb"></i> Rekomendasi & Kesimpulan</h4>
                     <div class="info-item mb-sm">
@@ -1175,11 +1115,7 @@ export class ManagementReviewPage {
     // ============================================
     
     getStatusBadge(status) {
-        const badges = {
-            'Draft': 'warning',
-            'Completed': 'info',
-            'Approved': 'success'
-        };
+        const badges = { 'Draft': 'warning', 'Completed': 'info', 'Approved': 'success' };
         const label = status || 'Draft';
         const type = badges[label] || 'default';
         return `<span class="badge-status ${type}">${label}</span>`;
@@ -1191,11 +1127,7 @@ export class ManagementReviewPage {
     }
 
     getStatusColor(status) {
-        const colors = {
-            'Draft': '#fef3c7',
-            'Completed': '#e0f2fe',
-            'Approved': '#dcfce7'
-        };
+        const colors = { 'Draft': '#fef3c7', 'Completed': '#e0f2fe', 'Approved': '#dcfce7' };
         return colors[status] || '#f8fafc';
     }
 
@@ -1204,14 +1136,8 @@ export class ManagementReviewPage {
         try {
             const date = new Date(dateString);
             if (isNaN(date.getTime())) return dateString;
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric'
-            });
-        } catch (e) {
-            return dateString;
-        }
+            return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+        } catch (e) { return dateString; }
     }
 
     escapeHtml(str) {

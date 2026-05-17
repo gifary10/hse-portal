@@ -1,8 +1,4 @@
 // pages/executive-reports.js
-// Executive Reports Page - Laporan level eksekutif untuk Top Management
-// High-level dashboard dengan KPI, trend, dan decision tracking
-// [UPDATED: Partial Update untuk switch tab]
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 

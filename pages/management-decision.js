@@ -1,7 +1,4 @@
 // pages/management-decision.js
-// Management Decision Page - Keputusan Manajemen berdasarkan Management Review
-// Untuk Top Management
-
 import { toast, showModal, closeModal } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 

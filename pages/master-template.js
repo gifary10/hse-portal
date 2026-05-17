@@ -1,8 +1,4 @@
 // pages/master-template.js
-// Master Template Page - Referensi Objective Template untuk OTP
-// Hanya menampilkan data referensi, tidak ada input/edit
-// UPDATED: Filter otomatis berdasarkan departemen user untuk role department
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 

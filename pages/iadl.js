@@ -1,7 +1,4 @@
 // pages/iadl.js
-// IADL Page - Dengan Filter Pencarian, Filter Departemen, dan Loading State yang Baik
-// UPDATED: Filter otomatis berdasarkan departemen user untuk role department
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 

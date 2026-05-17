@@ -1,8 +1,4 @@
 // pages/monitoring.js
-// Progress Monitoring Page - Untuk Department User
-// Menampilkan progress OTP dan temuan departemen sendiri
-// [UPDATED: Partial Update untuk switch tab]
-
 import { toast } from '../ui/components.js';
 import { CONFIG, getWebAppUrl, isGoogleSheetsEnabled } from '../core/config.js';
 
@@ -410,55 +406,6 @@ export class MonitoringPage {
                     </div>
                 </div>
             </div>
-
-            <!-- OTP List Table -->
-            <div class="app-card">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="bi bi-list-check"></i> Daftar OTP</h3>
-                    <span class="badge-status info">${progress.total} OTP</span>
-                </div>
-                <div class="table-wrapper">
-                    ${progress.total > 0 ? `
-                        <table class="data-table striped condensed">
-                            <thead>
-                                <tr>
-                                    <th>OTP ID</th>
-                                    <th>Objective</th>
-                                    <th>Target</th>
-                                    <th>Timeline</th>
-                                    <th>Owner</th>
-                                    <th>Weight</th>
-                                    <th>Status</th>
-                                    <th>Created</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${progress.filtered
-                                    .sort((a, b) => new Date(b.Created_Date || b.createdDate || b.CreatedAt || b.createdAt || 0) - new Date(a.Created_Date || a.createdDate || a.CreatedAt || a.createdAt || 0))
-                                    .slice(0, 20)
-                                    .map(o => `
-                                        <tr>
-                                            <td><code style="font-size: var(--fs-xs);">${this.escapeHtml(o.OTP_ID || o.otpId || '-')}</code></td>
-                                            <td class="col-wrap">${this.escapeHtml((o.Objective || o.objective || '').substring(0, 60))}</td>
-                                            <td><strong>${this.escapeHtml(o.Target || o.target || '-')}</strong></td>
-                                            <td><span class="badge-status info">${this.escapeHtml(o.Timeline || o.timeline || '-')}</span></td>
-                                            <td>${this.escapeHtml(o.Owner || o.owner || '-')}</td>
-                                            <td class="text-center">${o.Weight || o.weight ? (o.Weight || o.weight) + '%' : '-'}</td>
-                                            <td>${this.getOTPStatusBadge(o.Status || o.status)}</td>
-                                            <td><small>${this.formatDate(o.Created_Date || o.createdDate || o.CreatedAt || o.createdAt)}</small></td>
-                                        </tr>
-                                    `).join('')}
-                            </tbody>
-                        </table>
-                    ` : `
-                        <div class="empty-state">
-                            <i class="bi bi-inbox"></i>
-                            <h3>Tidak ada OTP</h3>
-                            <p>Belum ada OTP untuk filter yang dipilih</p>
-                        </div>
-                    `}
-                </div>
-            </div>
         `;
     }
 
@@ -567,53 +514,6 @@ export class MonitoringPage {
                             <p class="mt-md" style="color: var(--text-light);">Tidak ada temuan yang overdue!</p>
                         </div>
                     </div>
-                    `}
-                </div>
-            </div>
-
-            <!-- Temuan List -->
-            <div class="app-card">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="bi bi-list-check"></i> Daftar Temuan</h3>
-                    <span class="badge-status info">${progress.total} Temuan</span>
-                </div>
-                <div class="table-wrapper">
-                    ${progress.total > 0 ? `
-                        <table class="data-table striped condensed">
-                            <thead>
-                                <tr>
-                                    <th>ID Temuan</th>
-                                    <th>Kategori</th>
-                                    <th>Klasifikasi</th>
-                                    <th>Uraian</th>
-                                    <th>Target Selesai</th>
-                                    <th>PIC</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${progress.filtered
-                                    .sort((a, b) => new Date(b.Created_At || b.createdAt || 0) - new Date(a.Created_At || a.createdAt || 0))
-                                    .slice(0, 20)
-                                    .map(t => `
-                                        <tr>
-                                            <td><code style="font-size: var(--fs-xs);">${this.escapeHtml(t.Temuan_ID || t.temuanId || '-')}</code></td>
-                                            <td>${this.getKategoriBadge(t.Kategori_Temuan || t.kategoriTemuan)}</td>
-                                            <td>${this.getKlasifikasiBadge(t.Klasifikasi || t.klasifikasi)}</td>
-                                            <td class="col-wrap">${this.escapeHtml((t.Uraian_Temuan || t.uraianTemuan || '').substring(0, 60))}</td>
-                                            <td>${this.formatDate(t.Target_Selesai || t.targetSelesai)}</td>
-                                            <td>${this.escapeHtml(t.Penanggung_Jawab || t.penanggungJawab || '-')}</td>
-                                            <td>${this.getTemuanStatusBadge(t.Status || t.status)}</td>
-                                        </tr>
-                                    `).join('')}
-                            </tbody>
-                        </table>
-                    ` : `
-                        <div class="empty-state">
-                            <i class="bi bi-inbox"></i>
-                            <h3>Tidak ada temuan</h3>
-                            <p>Belum ada temuan untuk filter yang dipilih</p>
-                        </div>
                     `}
                 </div>
             </div>
